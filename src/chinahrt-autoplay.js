@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         chinahrt继续教育；chinahrt全自动刷课；解除系统限制；
-// @version      3.0.0
+// @version      3.0.1
 // @namespace    https://github.com/yikuaibaiban/chinahrt
 // @description  【❤全自动刷课❤】功能可自由配置，只需将视频添加到播放列表，后续刷课由系统自动完成；使用教程：https://www.cnblogs.com/ykbb/p/16695563.html
 // @author       yikuaibaiban;https://www.cnblogs.com/ykbb/;https://github.com/yikuaibaiban
@@ -27,6 +27,8 @@ const COURSE_PREVIEW = 0;
 const COURSE_PALY = 1;
 // 视频播放页面
 const VIDEO_PALY = 2;
+// VUE课程预览页面
+const VUE_COURSE_PREVIEW = 3;
 // 未知页面
 const UNKOWN_PAGE = 9999;
 // 课程存储关键字
@@ -130,13 +132,48 @@ function createCanPlayList() {
       top: "100px",
       background: "rgba(255,255,255,1)",
       right: "20px",
-      border: "1px solid #c1c1c1",
+      border: "1px solid #c1c1c1"
+    }
+  });
+
+  var status = $("<div></div>", {
+    text: "获取中...",
+    css: {
+      height: "30px",
+      "border-bottom": "1px solid",
+      "text-align": "center",
+      "line-height": "30px",
+      "color": "#4bccf2",
+      "font-weight": "bold"
+    },
+    click: function () {
+      playListBox.trigger("clear");
+      if (getPageNumber() == VUE_COURSE_PREVIEW) {
+        vue_findCourses(playListBox);
+      } else {
+        findCourses(playListBox);
+      }
+    }
+  });
+  status.appendTo(playListBox);
+
+  var listBox = $("<div></div>", {
+    css: {
+      height: "470px",
       "overflow-y": "auto"
     }
+  }).appendTo(playListBox);
+
+  playListBox.on("clear", function () {
+    status.text("获取中...");
+    listBox.empty();
   });
 
   // 添加绑定事件
   playListBox.on("bind", function (e, data) {
+    if (status.text() == "获取中...") {
+      status.text("点击刷新");
+    }
     var box = $("<div>", {
       css: {
         "border-bottom": "1px solid #c1c1c1",
@@ -196,7 +233,7 @@ function createCanPlayList() {
     });
     button.appendTo(box);
 
-    box.appendTo(playListBox);
+    box.appendTo(listBox);
   });
 
   playListBox.appendTo('body');
@@ -365,24 +402,98 @@ function getPageNumber() {
   if (href.indexOf("/videoPlay/play") > -1) {
     return VIDEO_PALY;
   }
+  // 以下是Vue版的请求地址
+  if (href.indexOf("/index.html#/v_courseDetails") > -1) {
+    return VUE_COURSE_PREVIEW;
+  }
+
   return UNKOWN_PAGE;
 }
 
+// 获取课程信息
+function findCourses(playListBox) {
+  // 提取所有链接
+  var allLinks = document.querySelectorAll("a");
+  // 提取所有可以播放的数据
+  for (let i = 0; i < allLinks.length; i++) {
+    const element = allLinks[i];
+    if (element.href.indexOf("/course/play_video") > -1) {
+      playListBox.trigger("bind", { title: element.innerText, url: element.href, status: $(element).prev().text() });
+    }
+  }
+}
+
+// VUE版本获取课程信息
+function vue_findCourses(playListBox) {
+  // 获取data
+  var data = document.querySelector("article")?.__vue__?._data;
+  if (!data) {
+    return;
+  }
+
+  // 获取页面信息
+  var pageData = data?.pageData;
+  if (!pageData) {
+    return;
+  }
+
+  // 获取所有章节信息
+  var chapters = pageData?.course?.chapter_list;
+
+  // 循环获取章节信息
+  if (chapters && chapters.length > 0) {
+    for (let i = 0; i < chapters.length; i++) {
+      const chapter = chapters[i];
+      // 循环分段（课时）
+      var sections = chapter?.section_list;
+      if (sections && sections.length > 0) {
+        for (let j = 0; j < sections.length; j++) {
+          const section = sections[j];
+          // https://web.chinahrt.com/index.html#/v_video?platformId=151&trainplanId=27535dc4b3294ec49fe2a0c11f6bf853&courseId=c548f87efd4548e6a212146ffe659f2a&sectionId=c548f87efd4548e6a212146ffe659f2a1-1
+          // 拼接课时网址
+          var url = window.location.protocol + "//" + window.location.host + window.location.pathname + "#/v_video?platformId=" + data.platformId + "&trainplanId=" + data.trainplanId + "&courseId=" + data.courseId + "&sectionId=" + section.id;
+          playListBox.trigger("bind", { title: section.name, url: url, status: section.study_status + "( " + section.studyTimeHHmmss + " )" });
+        }
+      }
+    }
+  }
+}
+
+
 window.onload = function () {
+  try {
+    // 检测到是Vue
+    if (Vue) {
+      console.log("当前是Vue模式");
+      // 创建播放列表
+      var playListBox;
+      // 循环检测
+      setInterval(() => {
+        if (getPageNumber() == VUE_COURSE_PREVIEW) {
+          if (!playListBox) {
+            playListBox = createCanPlayList();
+            setTimeout(function () {
+              vue_findCourses(playListBox);
+            }, 1000);
+          }
+        } else {
+          if (playListBox) {
+            playListBox.remove();
+            playListBox = undefined;
+          }
+        }
+      }, 1000);
+    }
+  } catch (error) {
+    console.log("当前不是Vue模式");
+  }
+
+
   if (getPageNumber() == COURSE_PREVIEW) {
     $(document).ready(function () {
       // 创建播放列表
       var playListBox = createCanPlayList();
-
-      // 提取所有链接
-      var allLinks = document.querySelectorAll("a");
-      // 提取所有可以播放的数据
-      for (let i = 0; i < allLinks.length; i++) {
-        const element = allLinks[i];
-        if (element.href.indexOf("/course/play_video") > -1) {
-          playListBox.trigger("bind", { title: element.innerText, url: element.href, status: $(element).prev().text() });
-        }
-      }
+      findCourses(playListBox);
     });
   }
 
