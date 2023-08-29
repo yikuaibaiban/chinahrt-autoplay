@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         chinahrt继续教育；chinahrt全自动刷课；解除系统限制；
-// @version      3.1.2
+// @version      3.1.3-Preview
 // @namespace    https://github.com/yikuaibaiban/chinahrt
 // @description  【❤全自动刷课❤】功能可自由配置，只需将视频添加到播放列表，后续刷课由系统自动完成；使用教程：https://www.cnblogs.com/ykbb/p/16695563.html
 // @author       yikuaibaiban;https://www.cnblogs.com/ykbb/;https://github.com/yikuaibaiban
@@ -21,55 +21,106 @@
 // @license      GPL
 // ==/UserScript==
 
-// 课程预览页面
+/**
+ * 课程预览页面
+ * @type {number}
+ */
 const COURSE_PREVIEW = 0;
-// 课程播放页面
+/**
+ * 课程播放页面
+ * @type {number}
+ */
 const COURSE_PALY = 1;
-// 视频播放页面
+/**
+ * 视频播放页面
+ * @type {number}
+ */
 const VIDEO_PALY = 2;
-// VUE课程预览页面
+/**
+ * VUE课程预览页面
+ * @type {number}
+ */
 const VUE_COURSE_PREVIEW = 3;
-// 未知页面
+/**
+ * 未知页面
+ * @type {number}
+ */
 const UNKOWN_PAGE = 9999;
-// 课程存储关键字
+/**
+ * 课程存储关键字
+ * @type {string}
+ */
 const COURSES = "courses";
-// 自动播放
+/**
+ * 自动播放
+ * @type {string}
+ */
 const AUTOPLAY = "autoPlay";
-// 静音
+/**
+ * 静音
+ * @type {string}
+ */
 const MUTE = "mute";
-// 拖动
+/**
+ * 拖动
+ * @type {string}
+ */
 const DRAG = "drag";
-// 播放速度
+/**
+ * 播放速度
+ * @type {string}
+ */
 const SPEED = "speed";
-// 播放模式
+/**
+ * 播放模式
+ * @type {string}
+ */
 const PLAY_MODE = "play_mode";
 
-// 获取自动播放
+/**
+ * 获取自动播放
+ * @returns {*}
+ */
 function getAutoPlay() {
     return GM_getValue(AUTOPLAY, true);
 }
 
-// 获取静音
+/**
+ * 获取静音
+ * @returns {*}
+ */
 function getMute() {
     return GM_getValue(MUTE, true);
 }
 
-// 获取拖动
+/**
+ * 获取拖动
+ * @returns {*}
+ */
 function getDrag() {
     return GM_getValue(DRAG, 5);
 }
 
-// 获取播放速度
+/**
+ * 获取播放速度
+ * @returns {*}
+ */
 function getSpeed() {
     return GM_getValue(SPEED, 1);
 }
 
-// 播放模式
+/**
+ * 播放模式
+ * @returns {*}
+ */
 function getPlayMode() {
     return GM_getValue(PLAY_MODE, 0);
 }
 
-// 获取播放列表
+/**
+ * 获取播放列表
+ * @returns {*|*[]}
+ */
 function getCourses() {
     var value = GM_getValue(COURSES, []);
     if (Array.isArray(value)) {
@@ -78,7 +129,11 @@ function getCourses() {
     return [];
 }
 
-// 添加到播放列表
+/**
+ * 添加到播放列表
+ * @param element
+ * @returns {boolean}
+ */
 function addCourse(element) {
     if (!element.title || !element.url) {
         console.error(element);
@@ -100,7 +155,10 @@ function addCourse(element) {
     return true;
 }
 
-// 从播放列表移除
+/**
+ * 从播放列表移除
+ * @param index
+ */
 function removeCourse(index) {
     var courses = getCourses();
 
@@ -130,7 +188,10 @@ function removeCourse(index) {
     GM_setValue(COURSES, courses);
 }
 
-// 生成可以添加到播放列表的容器
+/**
+ * 生成可以添加到播放列表的容器
+ * @returns {*|jQuery|HTMLElement}
+ */
 function createCanPlayList() {
     // 生成容器
     var playListBox = $("<div>", {
@@ -251,7 +312,10 @@ function createCanPlayList() {
     return playListBox;
 }
 
-// 显示通知
+/**
+ * 显示通知
+ * @param content
+ */
 function showNotification(content) {
     GM_notification({
         text: content,
@@ -260,7 +324,9 @@ function showNotification(content) {
     });
 }
 
-// 创建配置窗口
+/**
+ * 创建配置窗口
+ */
 function createConfigBox() {
     var box = $("<div>", {
         css: {
@@ -388,7 +454,9 @@ function createConfigBox() {
     box.appendTo("body");
 }
 
-// 创建播放列表窗口
+/**
+ * 创建播放列表窗口
+ */
 function createPlayListBox() {
     var box = $("<div>", {
         id: "playListBox",
@@ -454,9 +522,17 @@ function createPlayListBox() {
     box.appendTo("body");
 }
 
-// 获取当前页面编号
+/**
+ * 获取当前页面编号
+ * @returns {number}
+ */
 function getPageNumber() {
     var href = window.location.href;
+    // 以下是Vue版的请求地址
+    if (href.indexOf("/index.html#/v_courseDetails") > -1) {
+        return VUE_COURSE_PREVIEW;
+    }
+    // 默认课程详情地址
     if (href.indexOf("/course/preview") > -1) {
         return COURSE_PREVIEW;
     }
@@ -466,15 +542,14 @@ function getPageNumber() {
     if (href.indexOf("/videoPlay/play") > -1) {
         return VIDEO_PALY;
     }
-    // 以下是Vue版的请求地址
-    if (href.indexOf("/index.html#/v_courseDetails") > -1) {
-        return VUE_COURSE_PREVIEW;
-    }
 
     return UNKOWN_PAGE;
 }
 
-// 获取课程信息
+/**
+ * 获取课程信息
+ * @param playListBox
+ */
 function findCourses(playListBox) {
     // 提取所有链接
     var allLinks = document.querySelectorAll("a");
@@ -491,7 +566,10 @@ function findCourses(playListBox) {
     }
 }
 
-// VUE版本获取课程信息
+/**
+ * VUE版本获取课程信息
+ * @param playListBox
+ */
 function vue_findCourses(playListBox) {
     // 获取data
     var data = document.querySelector("article")?.__vue__?._data;
@@ -549,7 +627,7 @@ function createExperimentalBox() {
     });
 
     $("<div>", {
-        text: "实验性功能(谨慎使用)",
+        text: "实验性功能(谨慎使用)，此功能只适用个别地区（个别地区的BUG），不建议所有人使用。",
         css: {
             "border-bottom": "1px solid #ccc",
             padding: "5px",
@@ -566,12 +644,22 @@ function createExperimentalBox() {
         }
     }).appendTo(playModeBox);
     $("<label>", {text: "正常"}).appendTo(playModeBox);
+
+    $("<input>", {
+        type: "radio", name: "playMode", value: 3, checked: getPlayMode() == 3, click: function (e) {
+            GM_setValue(PLAY_MODE, parseInt(e.currentTarget.value));
+        }
+    }).appendTo(playModeBox);
+
+    $("<label>", {text: "二段播放", title: "将视频分为二段：开始，结束各播放90秒"}).appendTo(playModeBox);
+
     $("<input>", {
         type: "radio", name: "playMode", value: 1, checked: getPlayMode() == 1, click: function (e) {
             GM_setValue(PLAY_MODE, parseInt(e.currentTarget.value));
         }
     }).appendTo(playModeBox);
     $("<label>", {text: "三段播放", title: "将视频分为三段：开始，中间，结束各播放90秒"}).appendTo(playModeBox);
+
     $("<input>", {
         type: "radio", name: "playMode", value: 2, checked: getPlayMode() == 2, click: function (e) {
             GM_setValue(PLAY_MODE, parseInt(e.currentTarget.value));
@@ -713,6 +801,7 @@ window.onload = function () {
                 }
             }
 
+            // 视频总长度
             var videoDuration = 0;
 
             var tmp = setInterval(function () {
@@ -736,48 +825,88 @@ window.onload = function () {
                         }
                     });
 
-                    videoDuration = player.getMetaDate().duration;
-
                     player.addListener('time', function (t) {
+                        videoDuration = parseInt(player.getMetaDate().duration);
+                        // console.log("videoDuration",videoDuration);
                         // console.log(t, getPlayMode());
                         // 正常模式
-                        if (getPlayMode() == 0) {
-                            return;
-                        }
+                        // if (getPlayMode() == 0) {
+                        //     return;
+                        // }
 
                         // 三段播放模式
                         if (getPlayMode() == 1) {
-                            if (parseInt(videoDuration) <= 270) {
+                            // 时长不足
+                            if (videoDuration <= 270) {
                                 return;
                             }
 
-                            if (t >= parseInt(videoDuration) - 90) {
+                            // 中段范围
+                            var videoMiddleStart = (videoDuration / 2) - 45;
+                            var videoMiddleEnd = (videoDuration / 2) + 45;
+
+                            // 后段开始
+                            var videoEndStart = videoDuration - 90;
+
+                            // 跳转到中段
+                            if (t > 90 && t < videoMiddleStart) {
+                                player.videoSeek(videoMiddleStart);
                                 return;
                             }
 
-                            if (t >= (parseInt(videoDuration / 2) + 90)) {
-                                player.videoSeek(parseInt(videoDuration - 90));
+                            // 跳转到后段
+                            if (t > videoMiddleEnd && t < videoEndStart) {
+                                player.videoSeek(videoEndStart);
                                 return;
                             }
 
-                            if (t >= 60 && t < parseInt(videoDuration / 2)) {
-                                player.videoSeek(parseInt(videoDuration / 2));
-                                return;
-                            }
+                            // // 前段
+                            // if (t >= parseInt(videoDuration) - 90) {
+                            //     return;
+                            // }
+                            //
+                            // // 中段
+                            // if (t >= (parseInt(videoDuration / 2) + 90)) {
+                            //     player.videoSeek(parseInt(videoDuration - 90));
+                            //     return;
+                            // }
+                            //
+                            // // 后段
+                            // if (t >= 60 && t < parseInt(videoDuration / 2)) {
+                            //     player.videoSeek(parseInt(videoDuration / 2));
+                            //     return;
+                            // }
                             return;
                         }
 
                         // 秒播模式
                         if (getPlayMode() == 2) {
-                            if (t >= parseInt(videoDuration) - 1) {
+                            // 跳转到后段
+                            if (t > 1 && t < videoDuration - 1) {
+                                player.videoSeek(videoDuration - 1);
+                            }
+                            // // 前段
+                            // if (t >= videoDuration - 1) {
+                            //     return;
+                            // }
+                            //
+                            // // 后段
+                            // if (t >= 1) {
+                            //     player.videoSeek(videoDuration - 1);
+                            //     return;
+                            // }
+                            return;
+                        }
+
+                        if (getPlayMode() == 3) {
+                            if (videoDuration <= 180) {
                                 return;
                             }
 
-                            if (t >= 1) {
-                                player.videoSeek(parseInt(videoDuration - 1));
-                                return;
+                            // 跳转到后段
+                            if (t > 90 && t < videoDuration - 90) {
+                                player.videoSeek(videoDuration - 90);
                             }
-                            return;
                         }
                     });
                 }
