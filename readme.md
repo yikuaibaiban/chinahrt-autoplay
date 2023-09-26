@@ -17,6 +17,11 @@
 直接访问安装地址进行安装 [https://greasyfork.org/zh-CN/scripts/400775-chinahrt%E7%BB%A7%E7%BB%AD%E6%95%99%E8%82%B2](https://greasyfork.org/zh-CN/scripts/400775-chinahrt%E7%BB%A7%E7%BB%AD%E6%95%99%E8%82%B2)
 
 # 更新日志
+- 4.0.0
+  - 1.本次重构了所有代码。
+  - 2.修复了鼠标移出视频会暂停的问题。
+  - 3.增加了'一键添加'到播放列表与'一键清空'的功能。
+  - 4.修复一些已知错误。
 
 - 3.1.3-Preview (20230829)：
   - 优化三段和秒播的跳转逻辑

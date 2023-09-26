@@ -11,952 +11,1074 @@
 // @match        http://videoadmin.chinahrt.com/videoPlay/play*
 // @match        https://videoadmin.chinahrt.com.cn/videoPlay/play*
 // @match        https://videoadmin.chinahrt.com/videoPlay/play*
+// @resource     customCss file:///E:/confidential/chinahrt-autoplay/src/chinahrt-autoplay.css
 //
 // @grant        unsafeWindow
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addValueChangeListener
 // @grant        GM_notification
+// @grant        GM_addStyle
+// @grant        GM_getResourceText
 //
 // @license      GPL
 // ==/UserScript==
 
-/**
- * 课程预览页面
- * @type {number}
- */
-const COURSE_PREVIEW = 0;
-/**
- * 课程播放页面
- * @type {number}
- */
-const COURSE_PALY = 1;
-/**
- * 视频播放页面
- * @type {number}
- */
-const VIDEO_PALY = 2;
-/**
- * VUE课程预览页面
- * @type {number}
- */
-const VUE_COURSE_PREVIEW = 3;
-/**
- * 未知页面
- * @type {number}
- */
-const UNKOWN_PAGE = 9999;
-/**
- * 课程存储关键字
- * @type {string}
- */
-const COURSES = "courses";
-/**
- * 自动播放
- * @type {string}
- */
-const AUTOPLAY = "autoPlay";
-/**
- * 静音
- * @type {string}
- */
-const MUTE = "mute";
-/**
- * 拖动
- * @type {string}
- */
-const DRAG = "drag";
-/**
- * 播放速度
- * @type {string}
- */
-const SPEED = "speed";
-/**
- * 播放模式
- * @type {string}
- */
-const PLAY_MODE = "play_mode";
+class VueHandler {
+    /**
+     * 获取Vue实例
+     * @returns {*}
+     */
+    static getInstance() {
+        // todo: 好像有一个地区不是通过 article 标签获取的
+        return document.querySelector("article")?.__vue__;
+    }
 
-/**
- * 获取自动播放
- * @returns {*}
- */
-function getAutoPlay() {
-    return GM_getValue(AUTOPLAY, true);
+    /**
+     * 获取页面类型
+     * @returns {number}
+     */
+    static pageCategory() {
+        const path = this.getInstance()?.$route?.path;
+        if (path === "/v_courseDetails") {
+            return General.pageCategory.detail;
+        }
+        // todo: 缺少play
+        return General.pageCategory.other;
+    }
+
+    /**
+     * 注册路由变更监听器
+     */
+    static registerRouterChange() {
+        this.getInstance().$router.afterEach((to, from, failure) => {
+            PlayPage.removeConfigBox();
+            PlayPage.removePlaylistBox();
+            PlayPage.removeFeedbackBox();
+            PlayPage.removeNoticeBox();
+            experimentalHandler.removeExperimentalBox();
+            DetailPage.removeCanPlaylist();
+
+            if (to.path === "/v_courseDetails") {
+                DetailPage.appendToCanPlaylist(this.getCourses())
+            }
+            // todo: 缺少播放页面
+        });
+    }
+
+    /**
+     * 获取课程列表
+     * @returns {[]}
+     */
+    static getCourses() {
+        let results = [];
+
+        let query = this.getInstance()?.$route?.query;
+
+        const chapters = this.getInstance()?._data?.pageData?.course?.chapter_list;
+        if (chapters && chapters.length > 0) {
+            for (let i = 0; i < chapters.length; i++) {
+                const sections = chapters[i]?.section_list;
+                if (sections && sections.length > 0) {
+                    for (let j = 0; j < sections.length; j++) {
+                        const section = sections[j];
+                        const url = window.location.protocol + "//" + window.location.host + window.location.pathname +
+                            "#/v_video?platformId=" + query.platformId + "&trainplanId=" + query.trainplanId + "&courseId=" +
+                            query.courseId + "&sectionId=" + section.id;
+                        results.push({
+                            title: section.name,
+                            url,
+                            status: section.study_status + "( " + section.studyTimeStr + " )"
+                        });
+                    }
+                }
+            }
+        }
+
+        return results;
+    }
 }
 
-/**
- * 获取静音
- * @returns {*}
- */
-function getMute() {
-    return GM_getValue(MUTE, true);
+class BasicHandler {
+    /**
+     * 获取页面类型
+     * @returns {number}
+     */
+    static pageCategory() {
+        const href = window.location.href;
+        if (href.indexOf("/course/play_video") > -1 || href.indexOf("/videoPlay/play") > -1) {
+            return General.pageCategory.play;
+        }
+        if (href.indexOf("/course/preview") > -1) {
+            return General.pageCategory.detail;
+        }
+        return General.pageCategory.other;
+    }
+
+    /**
+     * 查找页面课程章节信息
+     * @returns {[]}
+     */
+    static findPageCourses() {
+        let results = [];
+        if (this.pageCategory() === General.pageCategory.detail) {
+            const allLinks = document.querySelectorAll("a");
+            for (let i = 0; i < allLinks.length; i++) {
+                const element = allLinks[i];
+                if (element.href.indexOf("/course/play_video") > -1) {
+                    results.push({
+                        title: element.innerText,
+                        url: element.href,
+                        status: $(element).prev().text()
+                    });
+                }
+            }
+        }
+        return results;
+    }
+
+    /**
+     * 生成窗口子项
+     * @param item 项目
+     * @param parent 窗口
+     */
+    static generateBoxItem(item, parent) {
+        let box = document.createElement("div");
+        box.className = "item";
+
+        let title = document.createElement("p");
+        title.innerText = item.title;
+        title.className = "title";
+        box.appendChild(title);
+
+        for (let i = 0; i < item.options.length; i++) {
+            const option = item.options[i];
+            let label = document.createElement("label");
+            label.innerText = option.text;
+            box.appendChild(label);
+            let input = document.createElement("input");
+            input.type = "radio";
+            input.name = item.name;
+            input.value = option.value;
+            input.checked = item.action() === option.value;
+            input.onclick = function () {
+                item.action(option.value);
+            };
+            label.appendChild(input);
+        }
+
+        if (item.remark) {
+            let remark = document.createElement("p");
+            remark.innerText = item.remark;
+            remark.className = "remark";
+            box.appendChild(remark);
+        }
+        parent.appendChild(box);
+    }
 }
 
-/**
- * 获取拖动
- * @returns {*}
- */
-function getDrag() {
-    return GM_getValue(DRAG, 5);
-}
+class General {
+    static coursesKey = "courses";
 
-/**
- * 获取播放速度
- * @returns {*}
- */
-function getSpeed() {
-    return GM_getValue(SPEED, 1);
-}
+    /**
+     * 页面类型
+     * @type {{play: number, other: number, detail: number}}
+     */
+    static pageCategory = {
+        play: 0,
+        detail: 1,
+        other: 99
+    }
 
-/**
- * 播放模式
- * @returns {*}
- */
-function getPlayMode() {
-    return GM_getValue(PLAY_MODE, 0);
-}
+    /**
+     * 添加课程到播放列表
+     * @param value 课程数据
+     * @returns {boolean} 添加成功
+     */
+    static addCourse(value) {
+        if (!value.title || !value.url) {
+            this.notification("课程添加失败，缺少必要参数。");
+            return false;
+        }
 
-/**
- * 获取播放列表
- * @returns {*|*[]}
- */
-function getCourses() {
-    var value = GM_getValue(COURSES, []);
-    if (Array.isArray(value)) {
+        let courses = this.courses();
+        if (this.courseAdded(courses, value.url)) {
+            this.notification("课程已经在播放列表中。")
+            return false;
+        }
+        courses.push({title: value.title, url: value.url});
+        this.courses(courses);
+        return true;
+    }
+
+    /**
+     * 从课程列表移除课程
+     * @param index 待移除序号
+     */
+    static removeCourse(index) {
+        let courses = this.courses();
+
+        if (Number.isNaN(index)) {
+            for (let i = courses.length; i >= 0; i--) {
+                const element = courses[i];
+                // 正则提取 href 中  sectionId courseId trainplanId
+                let jsonHref = element.url;
+                let jsonSectionId = jsonHref.match(/sectionId=([^&]*)/)[1];
+                let jsonCourseId = jsonHref.match(/courseId=([^&]*)/)[1];
+                let jsonTrainplanId = jsonHref.match(/trainplanId=([^&]*)/)[1];
+
+                // 正则提取 window.location.href 中  sectionId courseId trainplanId
+                let href = window.location.href;
+                let sectionId = href.match(/sectionId=([^&]*)/)[1];
+                let courseId = href.match(/courseId=([^&]*)/)[1];
+                let trainplanId = href.match(/trainplanId=([^&]*)/)[1];
+
+                if (jsonCourseId === courseId && jsonSectionId === sectionId && jsonTrainplanId === trainplanId) {
+                    courses.splice(i, 1);
+                }
+            }
+        } else {
+            courses.splice(index, 1);
+        }
+
+        this.courses(courses);
+    }
+
+    /**
+     * 检测课程是否已经添加
+     * @param courses 课程列表
+     * @param url 课程地址
+     * @returns {boolean} 是否已经添加
+     */
+    static courseAdded(courses, url) {
+        if (courses && Array.isArray(courses)) {
+            return courses.findIndex(value => value.url === url) > -1;
+        }
+        return this.courses().findIndex(value => value.url === url) > -1;
+    }
+
+    /**
+     * 获取配置值
+     * @param key 配置项
+     * @param defaultValue 默认值
+     * @returns {*} 配置值
+     */
+    static getValue(key, defaultValue) {
+        return GM_getValue(key, defaultValue);
+    }
+
+    /**
+     * 保存配置值
+     * @param key 配置项
+     * @param value 值
+     * @returns {*} 配置值
+     */
+    static setValue(key, value) {
+        GM_setValue(key, value);
         return value;
     }
-    return [];
-}
 
-/**
- * 添加到播放列表
- * @param element
- * @returns {boolean}
- */
-function addCourse(element) {
-    if (!element.title || !element.url) {
-        console.error(element);
-        alert("添加失败,缺少必要参数");
-        return false;
-    }
-
-    var oldValue = getCourses();
-
-    if (oldValue.findIndex(value => value.url == element.url) > -1) {
-        alert("已经存在播放列表中");
-        return false;
-    }
-
-    oldValue.push({title: element.title, url: element.url});
-
-    GM_setValue(COURSES, oldValue);
-
-    return true;
-}
-
-/**
- * 从播放列表移除
- * @param index
- */
-function removeCourse(index) {
-    var courses = getCourses();
-
-    if (Number.isNaN(index)) {
-        for (let i = courses.length; i >= 0; i--) {
-            const element = courses[i];
-            // 正则提取 href 中  sectionId courseId trainplanId
-            var jsonHref = element.url;
-            var jsonSectionId = jsonHref.match(/sectionId=([^&]*)/)[1];
-            var jsonCourseId = jsonHref.match(/courseId=([^&]*)/)[1];
-            var jsonTrainplanId = jsonHref.match(/trainplanId=([^&]*)/)[1];
-
-            // 正则提取 window.location.href 中  sectionId courseId trainplanId
-            var href = window.location.href;
-            var sectionId = href.match(/sectionId=([^&]*)/)[1];
-            var courseId = href.match(/courseId=([^&]*)/)[1];
-            var trainplanId = href.match(/trainplanId=([^&]*)/)[1];
-
-            if (jsonCourseId == courseId && jsonSectionId == sectionId && jsonTrainplanId == trainplanId) {
-                courses.splice(i, 1);
-            }
-        }
-    } else {
-        courses.splice(index, 1);
-    }
-
-    GM_setValue(COURSES, courses);
-}
-
-/**
- * 生成可以添加到播放列表的容器
- * @returns {*|jQuery|HTMLElement}
- */
-function createCanPlayList() {
-    // 生成容器
-    var playListBox = $("<div>", {
-        id: "canPlayBox",
-        css: {
-            width: "300px",
-            height: "500px",
-            position: "fixed",
-            top: "100px",
-            background: "rgba(255,255,255,1)",
-            right: "20px",
-            border: "1px solid #c1c1c1"
-        }
-    });
-
-    var status = $("<div></div>", {
-        text: "获取中...",
-        css: {
-            height: "30px",
-            "border-bottom": "1px solid",
-            "text-align": "center",
-            "line-height": "30px",
-            "color": "#4bccf2",
-            "font-weight": "bold"
-        },
-        click: function () {
-            playListBox.trigger("clear");
-            if (getPageNumber() == VUE_COURSE_PREVIEW) {
-                vue_findCourses(playListBox);
-            } else {
-                findCourses(playListBox);
-            }
-        }
-    });
-    status.appendTo(playListBox);
-
-    var listBox = $("<div></div>", {
-        css: {
-            height: "470px",
-            "overflow-y": "auto"
-        }
-    }).appendTo(playListBox);
-
-    playListBox.on("clear", function () {
-        status.text("获取中...");
-        listBox.empty();
-    });
-
-    // 添加绑定事件
-    playListBox.on("bind", function (e, data) {
-        if (status.text() == "获取中...") {
-            status.text("点击刷新");
-        }
-        var box = $("<div>", {
-            css: {
-                "border-bottom": "1px solid #c1c1c1",
-                "padding": "8px",
-                "line-height": "150%",
-                "border-bottom": "1px solid #c1c1c1",
-                "margin-bottom": "3px"
-            }
-        });
-
-        var ptitle = $("<p>", {
-            text: data.title,
-            title: data.title,
-            css: {
-                "font-size": "13px",
-                "white-space": "nowrap",
-                "overflow": "hidden",
-                "text-overflow": "ellipsis",
-            }
-        });
-        ptitle.appendTo(box);
-
-        var pstatus = $("<p>", {
-            text: "学习状态: " + data.status,
-            title: "学习状态: " + data.status,
-            css: {
-                "font-size": "12px",
-                "white-space": "nowrap",
-                "overflow": "hidden",
-                "text-overflow": "ellipsis",
-                "color": "#c1c1c1"
-            }
-        });
-        pstatus.appendTo(box);
-
-        var disabled = getCourses().findIndex(value => value.url == data.url) > -1;
-        var button = $("<button>", {
-            text: disabled ? "已在列表中" : "添加到播放列表",
-            type: "button",
-            disabled: disabled,
-            css: {
-                color: disabled ? "#000" : "#FFF",
-                backgroundColor: disabled ? "#c3c3c3" : "#4bccf2",
-                border: "none",
-                padding: "5px 10px",
-                "margin-top": "4px"
-            },
-            click: function () {
-                if (addCourse({title: data.title, url: data.url})) {
-                    $(this).attr("disabled", true);
-                    $(this).css({
-                        color: "#000",
-                        backgroundColor: "#c3c3c3",
-                    }).text("已在列表中");
-                }
-            }
-        });
-        button.appendTo(box);
-
-        box.appendTo(listBox);
-    });
-
-    playListBox.appendTo('body');
-
-    return playListBox;
-}
-
-/**
- * 显示通知
- * @param content
- */
-function showNotification(content) {
-    GM_notification({
-        text: content,
-        title: "Chinahrt自动刷课",
-        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAArFJREFUWEftlttPE0EUxr+9ddtdYOXSSmmlFFoasSFemmg0qYkIMfGF/9J/wTeN0cSYGBHEBBIoLSIU0VrKpe1eagaySWVmutu+GJPO4+5cfvOdc745wkGl3sI/HEIf4L9ToHrqoHLi4LTRgmm1IAhAMCDgmi4ibEgQhe4SyncOFA9tFMoWaucO9wRJFDAZlpCeUKAq/kA8AY7PHKwWmqic+i8WRRaQTciIj8qeFB0Bjo4dvN9ooOX/7L8OnLshYybaWQouALn5m/XeD3dJ5qcCSEQkrhJcgLfrdabshV8mvtdsPEoEPeV1JzzOqhjSROZ8JsBO2cJa0WQueLFSQ6lqYWpYQT4ZQnSQfzt3g+iwhFw64B/g9VqDm+0uANlNkYB8UkMupnqqkc+qMBgqUAqQOiex5412AHdOJhzAUlqDpvBNIBOXMTtBJyQF0El+ciALgHwfUEUspjTMjrGzPmKIuJ+hlaIA1ksmtg+srhRon7wwE0IuTieoHhTwZJ7+TgGsbDexe2T3DJAdV/E8o1HriTMu3QlR3ymAz4UmSj96A1AkActzOqZH6DD4BtjYM7G5130IYkMynmV0jHHqfXRQxMObPnKg/NvGh81mVyG4HQ1gcVYH22out5oel3Fr0kcVOC3g5cdz2JxH72oVPE1ruDfh7QMPMirCBo3IdMIvRfPi6WUNF2BMl0Aynjii1yAGRIyINZgADRN4tVa/aDiujnfFOg5PbCykNAyp/roPYsPEjn0DkInfflr4tMV+D7xu3P4/eV1GNsFXqWM/sLVv4usuvyK8QGIjEu6m2I+Qu9azIyKt2OoOvyp4EF439w1AJpLmhHjDfoVvUO6GJOHSMZkb86vAngq0L6ieOSA+UalddsWWfZmkA0ERhi4iYkjMUusUqq4AvGLey/8+QF+BP0npcPDdfTv7AAAAAElFTkSuQmCC",
-    });
-}
-
-/**
- * 创建配置窗口
- */
-function createConfigBox() {
-    var box = $("<div>", {
-        css: {
-            position: "fixed",
-            right: 0,
-            top: 0,
-            width: "250px",
-            height: "280px",
-            "background-color": "#FFF",
-            "z-index": 9999,
-            border: "1px solid #ccc"
-        }
-    });
-
-    $("<div>", {
-        text: "视频控制配置",
-        css: {
-            "border-bottom": "1px solid #ccc",
-            padding: "5px",
-            "font-weight": "bold"
-        }
-    }).appendTo(box);
-
-    var configBox = $("<div>", {
-        css: {
-            padding: "5px",
-            "padding-bottom": "5px",
-            "font-size": "12px",
-            "line-height": "150%"
-        }
-    });
-
-    // 自动播放
-    var autoPlayBox = $("<div>", {css: {"border-bottom": "1px dotted #ccc", "padding-bottom": "5px"}});
-    $("<p>", {text: "是否自动播放："}).appendTo(autoPlayBox);
-    $("<input>", {
-        type: "radio", name: "autoPlay", value: true, checked: getAutoPlay(), click: function () {
-            GM_setValue(AUTOPLAY, true);
-        }
-    }).appendTo(autoPlayBox);
-    $("<label>", {text: "是"}).appendTo(autoPlayBox);
-    $("<input>", {
-        type: "radio", name: "autoPlay", value: false, checked: !getAutoPlay(), click: function () {
-            GM_setValue(AUTOPLAY, false);
-        }
-    }).appendTo(autoPlayBox);
-    $("<label>", {text: "否"}).appendTo(autoPlayBox);
-    autoPlayBox.appendTo(configBox);
-
-    // 是否静音
-    var mutePlayBox = $("<div>", {css: {"border-bottom": "1px dotted #ccc", "padding-bottom": "5px"}});
-    $("<p>", {text: "是否静音："}).appendTo(mutePlayBox);
-    $("<input>", {
-        type: "radio", name: "mute", value: true, checked: getMute(), click: function () {
-            GM_setValue(MUTE, true);
-        }
-    }).appendTo(mutePlayBox);
-    $("<label>", {text: "是"}).appendTo(mutePlayBox);
-    $("<input>", {
-        type: "radio", name: "mute", value: false, checked: !getMute(), click: function () {
-            GM_setValue(MUTE, false);
-        }
-    }).appendTo(mutePlayBox);
-    $("<label>", {text: "否"}).appendTo(mutePlayBox);
-    $("<p>", {
-        text: "注意：不静音，视频可能会出现不会自动播放",
-        css: {"font-size": "13px", "font-weight": "bold"}
-    }).appendTo(mutePlayBox);
-    mutePlayBox.appendTo(configBox);
-
-    // 启用拖放
-    var dragPlayBox = $("<div>", {css: {"border-bottom": "1px dotted #ccc", "padding-bottom": "5px"}});
-    $("<p>", {text: "启用拖放（慎用）："}).appendTo(dragPlayBox);
-    $("<input>", {
-        type: "radio", name: "drag", value: 5, checked: getDrag() == 5, click: function () {
-            GM_setValue(DRAG, 5);
-        }
-    }).appendTo(dragPlayBox);
-    $("<label>", {text: "还原"}).appendTo(dragPlayBox);
-    $("<input>", {
-        type: "radio", name: "drag", value: 1, checked: getDrag() == 1, click: function () {
-            GM_setValue(DRAG, 1);
-        }
-    }).appendTo(dragPlayBox);
-    $("<label>", {text: "启用"}).appendTo(dragPlayBox);
-    dragPlayBox.appendTo(configBox);
-
-    // 是否静音
-    var speedPlayBox = $("<div>", {css: {"border-bottom": "1px dotted #ccc", "padding-bottom": "5px"}});
-    $("<p>", {text: "播放速度调整（慎用，不知后台是否检测）："}).appendTo(speedPlayBox);
-    $("<input>", {
-        type: "radio", name: "speed", value: 0, checked: getSpeed() == 0, click: function () {
-            GM_setValue(SPEED, 0);
-        }
-    }).appendTo(speedPlayBox);
-    $("<label>", {text: "0.5倍"}).appendTo(speedPlayBox);
-    $("<input>", {
-        type: "radio", name: "speed", value: 1, checked: getSpeed() == 1, click: function () {
-            GM_setValue(SPEED, 1);
-        }
-    }).appendTo(speedPlayBox);
-    $("<label>", {text: "正常"}).appendTo(speedPlayBox);
-    $("<input>", {
-        type: "radio", name: "speed", value: 2, checked: getSpeed() == 2, click: function () {
-            GM_setValue(SPEED, 2);
-        }
-    }).appendTo(speedPlayBox);
-    $("<label>", {text: "1.25倍"}).appendTo(speedPlayBox);
-    $("<input>", {
-        type: "radio", name: "speed", value: 3, checked: getSpeed() == 3, click: function () {
-            GM_setValue(SPEED, 3);
-        }
-    }).appendTo(speedPlayBox);
-    $("<label>", {text: "1.5倍"}).appendTo(speedPlayBox);
-    $("<input>", {
-        type: "radio", name: "speed", value: 4, checked: getSpeed() == 4, click: function () {
-            GM_setValue(SPEED, 4);
-        }
-    }).appendTo(speedPlayBox);
-    $("<label>", {text: "2倍"}).appendTo(speedPlayBox);
-    speedPlayBox.appendTo(configBox);
-
-    configBox.appendTo(box);
-
-    box.appendTo("body");
-}
-
-/**
- * 创建播放列表窗口
- */
-function createPlayListBox() {
-    var box = $("<div>", {
-        id: "playListBox",
-        css: {
-            position: "fixed",
-            right: 0,
-            top: 290,
-            width: "250px",
-            height: "450px",
-            "background-color": "#FFF",
-            "z-index": 9999,
-            border: "1px solid #ccc",
-            "overflow-y": "auto"
-        }
-    });
-
-    $("<div>", {
-        text: "视频列表",
-        css: {
-            "border-bottom": "1px solid #ccc",
-            padding: "5px",
-            "font-weight": "bold"
-        }
-    }).appendTo(box);
-
-    // 渲染课程列表
-    var courses = getCourses();
-    for (let index = 0; index < courses.length; index++) {
-        const element = courses[index];
-
-        var ptitle = $("<p>", {
-            text: element.title,
-            title: element.title,
-            css: {
-                "font-size": "13px",
-                "white-space": "nowrap",
-                "overflow": "hidden",
-                "text-overflow": "ellipsis",
-            }
-        });
-        ptitle.appendTo(box);
-
-        var button = $("<button>", {
-            text: "移除",
-            type: "button",
-            data: {index: index},
-            css: {
-                color: "#FFF",
-                backgroundColor: "#fd1952",
-                border: "none",
-                padding: "5px 10px",
-                "margin": "4px 0 10px 0",
-            },
-            click: function () {
-                if (confirm("确定删除这个视频么？")) {
-                    removeCourse($(this).data("index"));
-                }
-            }
-        });
-        button.appendTo(box);
-    }
-
-    box.appendTo("body");
-}
-
-/**
- * 获取当前页面编号
- * @returns {number}
- */
-function getPageNumber() {
-    var href = window.location.href;
-    // 以下是Vue版的请求地址
-    if (href.indexOf("/index.html#/v_courseDetails") > -1) {
-        return VUE_COURSE_PREVIEW;
-    }
-    // 默认课程详情地址
-    if (href.indexOf("/course/preview") > -1) {
-        return COURSE_PREVIEW;
-    }
-    if (href.indexOf("/course/play_video") > -1) {
-        return COURSE_PALY;
-    }
-    if (href.indexOf("/videoPlay/play") > -1) {
-        return VIDEO_PALY;
-    }
-
-    return UNKOWN_PAGE;
-}
-
-/**
- * 获取课程信息
- * @param playListBox
- */
-function findCourses(playListBox) {
-    // 提取所有链接
-    var allLinks = document.querySelectorAll("a");
-    // 提取所有可以播放的数据
-    for (let i = 0; i < allLinks.length; i++) {
-        const element = allLinks[i];
-        if (element.href.indexOf("/course/play_video") > -1) {
-            playListBox.trigger("bind", {
-                title: element.innerText,
-                url: element.href,
-                status: $(element).prev().text()
-            });
-        }
-    }
-}
-
-/**
- * VUE版本获取课程信息
- * @param playListBox
- */
-function vue_findCourses(playListBox) {
-    // 获取data
-    var data = document.querySelector("article")?.__vue__?._data;
-    if (!data) {
-        return;
-    }
-
-    // 获取页面信息
-    var pageData = data?.pageData;
-    if (!pageData) {
-        return;
-    }
-
-    // 获取所有章节信息
-    var chapters = pageData?.course?.chapter_list;
-
-    // 循环获取章节信息
-    if (chapters && chapters.length > 0) {
-        for (let i = 0; i < chapters.length; i++) {
-            const chapter = chapters[i];
-            // 循环分段（课时）
-            var sections = chapter?.section_list;
-            if (sections && sections.length > 0) {
-                for (let j = 0; j < sections.length; j++) {
-                    const section = sections[j];
-                    // https://web.chinahrt.com/index.html#/v_video?platformId=151&trainplanId=27535dc4b3294ec49fe2a0c11f6bf853&courseId=c548f87efd4548e6a212146ffe659f2a&sectionId=c548f87efd4548e6a212146ffe659f2a1-1
-                    // 拼接课时网址
-                    var url = window.location.protocol + "//" + window.location.host + window.location.pathname + "#/v_video?platformId=" + data.platformId + "&trainplanId=" + data.trainplanId + "&courseId=" + data.courseId + "&sectionId=" + section.id;
-                    playListBox.trigger("bind", {
-                        title: section.name,
-                        url: url,
-                        status: section.study_status + "( " + section.studyTimeHHmmss + " )"
-                    });
-                }
-            }
-        }
-    }
-}
-
-/**
- * 创建实验性功能窗口
- */
-function createExperimentalBox() {
-    var box = $("<div>", {
-        css: {
-            position: "fixed",
-            right: "255px",
-            top: 0,
-            width: "250px",
-            height: "280px",
-            "background-color": "#FFF",
-            "z-index": 9999,
-            border: "1px solid #ccc"
-        }
-    });
-
-    $("<div>", {
-        text: "实验性功能(谨慎使用)，此功能只适用个别地区（个别地区的BUG），不建议所有人使用。",
-        css: {
-            "border-bottom": "1px solid #ccc",
-            padding: "5px",
-            "font-weight": "bold"
-        }
-    }).appendTo(box);
-
-    // 播放模式
-    var playModeBox = $("<div>", {css: {"border-bottom": "1px dotted #ccc", "padding-bottom": "5px"}});
-    $("<p>", {text: "播放模式：鼠标停悬查看说明"}).appendTo(playModeBox);
-    $("<input>", {
-        type: "radio", name: "playMode", value: 0, checked: getPlayMode() == 0, click: function (e) {
-            GM_setValue(PLAY_MODE, parseInt(e.currentTarget.value));
-        }
-    }).appendTo(playModeBox);
-    $("<label>", {text: "正常"}).appendTo(playModeBox);
-
-    $("<input>", {
-        type: "radio", name: "playMode", value: 3, checked: getPlayMode() == 3, click: function (e) {
-            GM_setValue(PLAY_MODE, parseInt(e.currentTarget.value));
-        }
-    }).appendTo(playModeBox);
-
-    $("<label>", {text: "二段播放", title: "将视频分为二段：开始，结束各播放90秒"}).appendTo(playModeBox);
-
-    $("<input>", {
-        type: "radio", name: "playMode", value: 1, checked: getPlayMode() == 1, click: function (e) {
-            GM_setValue(PLAY_MODE, parseInt(e.currentTarget.value));
-        }
-    }).appendTo(playModeBox);
-    $("<label>", {text: "三段播放", title: "将视频分为三段：开始，中间，结束各播放90秒"}).appendTo(playModeBox);
-
-    $("<input>", {
-        type: "radio", name: "playMode", value: 2, checked: getPlayMode() == 2, click: function (e) {
-            GM_setValue(PLAY_MODE, parseInt(e.currentTarget.value));
-        }
-    }).appendTo(playModeBox);
-    $("<label>", {text: "秒播", title: "将视频分为两段:开始，结束各播放一秒"}).appendTo(playModeBox);
-
-    playModeBox.appendTo(box);
-    box.appendTo("body");
-}
-
-window.onload = function () {
-    try {
-        // 检测到是Vue
-        if (Vue) {
-            console.log("当前是Vue模式");
-            // 创建播放列表
-            var playListBox;
-            // 循环检测
-            setInterval(() => {
-                if (getPageNumber() == VUE_COURSE_PREVIEW) {
-                    if (!playListBox) {
-                        playListBox = createCanPlayList();
-                        setTimeout(function () {
-                            vue_findCourses(playListBox);
-                        }, 1000);
-                    }
-                } else {
-                    if (playListBox) {
-                        playListBox.remove();
-                        playListBox = undefined;
-                    }
-                }
-            }, 1000);
-        }
-    } catch (error) {
-        console.log("当前不是Vue模式");
-    }
-
-
-    if (getPageNumber() == COURSE_PREVIEW) {
-        $(document).ready(function () {
-            // 创建播放列表
-            var playListBox = createCanPlayList();
-            findCourses(playListBox);
-        });
-    }
-
-    if (getPageNumber() == VIDEO_PALY) {
-        $(document).ready(function () {
-            // 意见反馈
-            var feedback = $('<div></div>', {
-                css: {
-                    "font-size": "14px",
-                    "font-weight": "bold",
-                    color: "red",
-                    background: "#FFF",
-                    padding: "4px 7px",
-                    position: "absolute",
-                    top: "0",
-                    "line-height": "30px",
-                    "z-index": "99999",
-                    "display": "flex",
-                    "flex-direction": "column",
-                    "left": "30px",
-                    "text-align": "center"
-                }
-            });
-            $("<p></p>", {
-                text: "问题反馈",
-                css: {"font-size": "16px", "border-bottom": "1px solid #F00"}
-            }).appendTo(feedback);
-            $("<a></a>", {
-                text: "> 使用教程 <",
-                target: "_blank",
-                href: "https://www.cnblogs.com/ykbb/p/16695563.html",
-                css: {"font-size": "18px", "padding": "8px 0 8px 10px", "color": "#4bccf2"}
-            }).appendTo(feedback);
-            $("<a></a>", {
-                text: "博客园地址",
-                target: "_blank",
-                href: "https://www.cnblogs.com/ykbb/"
-            }).appendTo(feedback);
-            $("<a></a>", {
-                text: "博客园留言反馈",
-                target: "_blank",
-                href: "https://msg.cnblogs.com/send/ykbb"
-            }).appendTo(feedback);
-            $("<a></a>", {
-                text: "GitHub反馈",
-                target: "_blank",
-                href: "https://github.com/yikuaibaiban/chinahrt-autoplay/issues"
-            }).appendTo(feedback);
-            feedback.prependTo("#body");
-
-            // 增加提示信息
-            $('<div></div>', {
-                html: "点击课程详情页中的插件提供的【添加到播放列表】按钮添加需要自动播放的课程。受到浏览器策略影响第一次可能无法自动播放，请手动点击播放。",
-                css: {
-                    "font-size": "14px",
-                    "font-weight": "bold",
-                    color: "red",
-                    background: "#FFF",
-                    position: "absolute",
-                    "line-height": "30px",
-                    "z-index": "99999",
-                    "left": "30px",
-                    bottom: "10px"
-                }
-            }).prependTo("#body");
-
-            $("video").prop("muted", "muted");
-
-            // 移除讨厌的事件
-            removePauseBlur();
-
-            // 视频播放初始化
-            function run() {
-                // 总是显示播放进度
-                player.changeControlBarShow(true);
-
-                // 拖动开关
-                player.changeConfig('config', 'timeScheduleAdjust', getDrag());
-
-                // 静音
-                if (getMute()) {
-                    player.videoMute();
-                } else {
-                    +
-                        player.videoEscMute();
-                }
-
-                // 播放速度
-                player.changePlaybackRate(getSpeed());
-
-                // 自动播放
-                if (getAutoPlay()) {
+    /**
+     * 自动播放配置
+     * @param value 配置值
+     * @returns {*} 配置值
+     */
+    static autoPlay(value) {
+        if (value !== undefined) {
+            General.setValue("autoPlay", value);
+            if (value) {
+                if (player) {
                     player.videoPlay();
                 }
             }
+            return value;
+        } else {
+            return General.getValue("autoPlay", true);
+        }
+    }
 
-            // 视频总长度
-            var videoDuration = 0;
-
-            var tmp = setInterval(function () {
-                if (player != undefined) {
-                    player.addListener('loadedmetadata', run);
-                    run();
-                    clearInterval(tmp);
-
-                    // 移除本课程学习完毕
-                    attrset.proxyUrl = "";
-
-                    // 播放结束
-                    player.addListener('ended', function () {
-                        removeCourse(window.location.href);
-                        var courses = getCourses();
-                        if (courses.length == 0) {
-                            showNotification("所有视频已经播放完毕");
-                        } else {
-                            showNotification("即将播放下一个视频:" + courses[0].title);
-                            window.top.location.href = courses[0].url;
-                        }
-                    });
-
-                    player.addListener('time', function (t) {
-                        videoDuration = parseInt(player.getMetaDate().duration);
-                        // console.log("videoDuration",videoDuration);
-                        // console.log(t, getPlayMode());
-                        // 正常模式
-                        // if (getPlayMode() == 0) {
-                        //     return;
-                        // }
-
-                        // 三段播放模式
-                        if (getPlayMode() == 1) {
-                            // 时长不足
-                            if (videoDuration <= 270) {
-                                return;
-                            }
-
-                            // 中段范围
-                            var videoMiddleStart = (videoDuration / 2) - 45;
-                            var videoMiddleEnd = (videoDuration / 2) + 45;
-
-                            // 后段开始
-                            var videoEndStart = videoDuration - 90;
-
-                            // 跳转到中段
-                            if (t > 90 && t < videoMiddleStart) {
-                                player.videoSeek(videoMiddleStart);
-                                return;
-                            }
-
-                            // 跳转到后段
-                            if (t > videoMiddleEnd && t < videoEndStart) {
-                                player.videoSeek(videoEndStart);
-                                return;
-                            }
-
-                            // // 前段
-                            // if (t >= parseInt(videoDuration) - 90) {
-                            //     return;
-                            // }
-                            //
-                            // // 中段
-                            // if (t >= (parseInt(videoDuration / 2) + 90)) {
-                            //     player.videoSeek(parseInt(videoDuration - 90));
-                            //     return;
-                            // }
-                            //
-                            // // 后段
-                            // if (t >= 60 && t < parseInt(videoDuration / 2)) {
-                            //     player.videoSeek(parseInt(videoDuration / 2));
-                            //     return;
-                            // }
-                            return;
-                        }
-
-                        // 秒播模式
-                        if (getPlayMode() == 2) {
-                            // 跳转到后段
-                            if (t > 1 && t < videoDuration - 1) {
-                                player.videoSeek(videoDuration - 1);
-                            }
-                            // // 前段
-                            // if (t >= videoDuration - 1) {
-                            //     return;
-                            // }
-                            //
-                            // // 后段
-                            // if (t >= 1) {
-                            //     player.videoSeek(videoDuration - 1);
-                            //     return;
-                            // }
-                            return;
-                        }
-
-                        if (getPlayMode() == 3) {
-                            if (videoDuration <= 180) {
-                                return;
-                            }
-
-                            // 跳转到后段
-                            if (t > 90 && t < videoDuration - 90) {
-                                player.videoSeek(videoDuration - 90);
-                            }
-                        }
-                    });
-                }
-            }, 500);
-
-            // 创建配置窗口
-            createConfigBox();
-
-            // 创建播放列表窗口
-            createPlayListBox();
-
-            // 创建实验性功能窗口
-            createExperimentalBox();
-
-            // 检测播放列表
-            GM_addValueChangeListener(COURSES, function (name, oldValue, newValue, remote) {
-                console.log("检测播放列表变动");
-                $("#playListBox").remove();
-                createPlayListBox();
-            });
-
-            // 监测自动播放
-            GM_addValueChangeListener(AUTOPLAY, function (name, oldValue, newValue, remote) {
-                console.log("监测自动播放变动");
-                if (newValue) {
-                    player.videoPlay();
-                }
-            });
-
-            // 检测静音
-            GM_addValueChangeListener(MUTE, function (name, oldValue, newValue, remote) {
-                console.log("检测静音变动");
-                if (newValue) {
+    /**
+     * 静音播放配置
+     * @param value 配置值
+     * @returns {*} 配置值
+     */
+    static mute(value) {
+        if (value !== undefined) {
+            General.setValue("mute", value);
+            if (player) {
+                if (value) {
                     player.videoMute();
                 } else {
                     player.videoEscMute();
                 }
-            });
+            }
+            return value
+        } else {
+            return General.getValue("mute", true);
+        }
+    }
 
-            // 检测拖动
-            GM_addValueChangeListener(DRAG, function (name, oldValue, newValue, remote) {
-                console.log("检测拖动变动");
-                player.changeConfig('config', 'timeScheduleAdjust', newValue);
-            });
+    /**
+     * 拖动配置
+     * @param value 配置值
+     * @returns {*} 配置值
+     */
+    static drag(value) {
+        // 强制跳过拖拽检测
+        if (attrset) {
+            attrset.ifCanDrag = 1;
+        }
 
-            // 检测速度
-            GM_addValueChangeListener(SPEED, function (name, oldValue, newValue, remote) {
-                console.log("检测速度变动");
-                player.changePlaybackRate(newValue);
-            });
+        if (value !== undefined) {
+            General.setValue("drag", value);
+            if (player) {
+                player.changeConfig('config', 'timeScheduleAdjust', value);
+            }
+            return value;
+        } else {
+            return General.getValue("drag", 5);
+        }
+    }
+
+    /**
+     * 播放速度配置
+     * @param value 配置值
+     * @returns {*} 配置值
+     */
+    static speed(value) {
+        // 强制跳过倍速播放检测
+        if (attrset) {
+            attrset.playbackRate = 1;
+        }
+
+        if (value !== undefined) {
+            General.setValue("speed", value);
+            if (player) {
+                player.changePlaybackRate(value);
+            }
+            return value;
+        } else {
+            return General.getValue("speed", 1);
+        }
+    }
+
+    /**
+     * 播放模式配置
+     * @param value 配置值
+     * @returns {*} 配置值
+     */
+    static playModel(value) {
+        return value !== undefined ? General.setValue("play_mode", value) : General.getValue("play_mode", 0);
+    }
+
+    /**
+     * 消息推送
+     * @param content
+     */
+    static notification(content) {
+        GM_notification({
+            text: content,
+            title: "Chinahrt自动刷课",
+            image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAArFJREFUWEftlttPE0EUxr+9ddtdYOXSSmmlFFoasSFemmg0qYkIMfGF/9J/wTeN0cSYGBHEBBIoLSIU0VrKpe1eagaySWVmutu+GJPO4+5cfvOdc745wkGl3sI/HEIf4L9ToHrqoHLi4LTRgmm1IAhAMCDgmi4ibEgQhe4SyncOFA9tFMoWaucO9wRJFDAZlpCeUKAq/kA8AY7PHKwWmqic+i8WRRaQTciIj8qeFB0Bjo4dvN9ooOX/7L8OnLshYybaWQouALn5m/XeD3dJ5qcCSEQkrhJcgLfrdabshV8mvtdsPEoEPeV1JzzOqhjSROZ8JsBO2cJa0WQueLFSQ6lqYWpYQT4ZQnSQfzt3g+iwhFw64B/g9VqDm+0uANlNkYB8UkMupnqqkc+qMBgqUAqQOiex5412AHdOJhzAUlqDpvBNIBOXMTtBJyQF0El+ciALgHwfUEUspjTMjrGzPmKIuJ+hlaIA1ksmtg+srhRon7wwE0IuTieoHhTwZJ7+TgGsbDexe2T3DJAdV/E8o1HriTMu3QlR3ymAz4UmSj96A1AkActzOqZH6DD4BtjYM7G5130IYkMynmV0jHHqfXRQxMObPnKg/NvGh81mVyG4HQ1gcVYH22out5oel3Fr0kcVOC3g5cdz2JxH72oVPE1ruDfh7QMPMirCBo3IdMIvRfPi6WUNF2BMl0Aynjii1yAGRIyINZgADRN4tVa/aDiujnfFOg5PbCykNAyp/roPYsPEjn0DkInfflr4tMV+D7xu3P4/eV1GNsFXqWM/sLVv4usuvyK8QGIjEu6m2I+Qu9azIyKt2OoOvyp4EF439w1AJpLmhHjDfoVvUO6GJOHSMZkb86vAngq0L6ieOSA+UalddsWWfZmkA0ERhi4iYkjMUusUqq4AvGLey/8+QF+BP0npcPDdfTv7AAAAAElFTkSuQmCC",
         });
     }
+
+    /**
+     * 课程列表
+     * @param value 课程列表数据
+     * @returns {*|*[]} 课程列表
+     */
+    static courses(value) {
+        if (value) {
+            if (!Array.isArray(value)) {
+                this.notification("保存课程数据失败，数据格式异常。");
+                return [];
+            }
+            return General.setValue(this.coursesKey, value);
+        }
+
+        let courses = General.getValue(this.coursesKey, []);
+        if (!Array.isArray(courses)) {
+            return [];
+        }
+
+        return courses;
+    }
+}
+
+class PlayPage {
+    static #configBoxId = "configBox";
+    static #playlistBoxId = "playlistBox";
+    static #feedbackBoxId = "feedbackBox";
+    // static #noticeBoxId = "noticeBox";
+
+    static #configContent = [
+        {
+            title: "自动播放",
+            name: "autoPlay",
+            action: General.autoPlay,
+            remark: "",
+            options: [
+                {
+                    text: "是",
+                    value: true
+                },
+                {
+                    text: "否",
+                    value: false
+                }
+            ]
+        },
+        {
+            title: "静音",
+            name: "mute",
+            action: General.mute,
+            remark: "注意：不静音，视频可能会出现不会自动播放",
+            options: [
+                {
+                    text: "是",
+                    value: true
+                },
+                {
+                    text: "否",
+                    value: false
+                }
+            ]
+        },
+        {
+            title: "拖放",
+            name: "drag",
+            action: General.drag,
+            remark: "注意：慎用此功能，后台可能会检测播放数据。",
+            options: [
+                {
+                    text: "还原",
+                    value: 5
+                },
+                {
+                    text: "启用",
+                    value: 1
+                }
+            ]
+        },
+        {
+            title: "播放速度",
+            name: "speed",
+            action: General.speed,
+            remark: "注意：慎用此功能，后台可能会检测播放数据。",
+            options: [
+                {
+                    text: "0.5倍",
+                    value: 0
+                },
+                {
+                    text: "正常",
+                    value: 1
+                },
+                {
+                    text: "1.25倍",
+                    value: 2
+                },
+                {
+                    text: "1.5倍",
+                    value: 3
+                },
+                {
+                    text: "2倍",
+                    value: 4
+                }
+            ]
+        },
+    ];
+
+    /**
+     * 播放器初始化
+     */
+    static playerInit() {
+        // 总是显示播放进度
+        player.changeControlBarShow(true);
+
+        // 拖动开关
+        player.changeConfig('config', 'timeScheduleAdjust', General.drag());
+
+        // 静音
+        if (General.mute()) {
+            player.videoMute();
+        } else {
+            player.videoEscMute();
+        }
+
+        // 播放速度
+        player.changePlaybackRate(General.speed());
+
+        // 自动播放
+        if (General.autoPlay()) {
+            player.videoPlay();
+            // const executeFn = async () => {
+            //     try {
+            //         await player.videoPlay();
+            //     } catch (e) {
+            //         console.log('拦截到错误', e)
+            //     }
+            // }
+            //
+            // executeFn().catch(() => {
+            //     alert("无法自动播放，请设置为静音后，再刷新页面尝试。")
+            // });
+        }
+    }
+
+    static init() {
+        // 默认视频静音，这样才可以自动播放
+        // const video = document.getElementsByTagName("video")[0];
+        //
+        // video.muted = true;
+
+        // 移除鼠标焦点事件
+        // 此方法为官方自带方法。
+        removePauseBlur();
+        // window.onblur = function () {
+        //     setTimeout(() => {
+        //         playHandler()
+        //     }, 100);
+        // };
+        // window.onfocus = function () {
+        // };
+
+        // 初始化播放窗口
+        PlayPage.createConfigBox();
+        PlayPage.createPlaylistBox();
+        PlayPage.createFeedbackBox();
+        // PlayPage.createNoticeBox();
+
+        experimentalHandler.createExperimentalBox();
+
+        // 检测播放列表变更
+        GM_addValueChangeListener(General.coursesKey, function (name, oldValue, newValue, remote) {
+            PlayPage.removePlaylistBox();
+            PlayPage.createPlaylistBox();
+        });
+
+        PlayPage.playerInit();
+        player.addListener('loadedmetadata', PlayPage.playerInit);
+
+        // 播放结束
+        player.addListener('ended', function () {
+            General.removeCourse(window.location.href);
+            let courses = General.courses();
+            if (courses.length === 0) {
+                General.notification("所有视频已经播放完毕");
+            } else {
+                General.notification("即将播放下一个视频:" + courses[0].title);
+                window.top.location.href = courses[0].url;
+            }
+        });
+
+        player.addListener('time', function (t) {
+            experimentalHandler.timeHandler(t);
+        });
+    }
+
+    /**
+     * 获取配置窗口实例
+     * @returns {HTMLElement}
+     */
+    static #getConfigBox() {
+        return document.getElementById(this.#configBoxId);
+    }
+
+    /**
+     * 获取播放窗口实例
+     * @returns {HTMLElement}
+     */
+    static #getPlaylistBox() {
+        return document.getElementById(this.#playlistBoxId);
+    }
+
+    /**
+     * 获取反馈窗口实例
+     * @returns {HTMLElement}
+     */
+    static #getFeedbackBox() {
+        return document.getElementById(this.#feedbackBoxId);
+    }
+
+    /**
+     * 获取公告窗口实例
+     * @returns {HTMLElement}
+     */
+    // static #getNoticeBox() {
+    //     return document.getElementById(this.#noticeBoxId);
+    // }
+
+    /**
+     * 生成配置窗口
+     * @returns {HTMLElement}
+     */
+    static createConfigBox() {
+        const existBox = this.#getConfigBox();
+        if (existBox) {
+            return existBox;
+        }
+
+        let configBox = document.createElement("div");
+        configBox.id = this.#configBoxId;
+        configBox.className = "configBox"
+        document.body.appendChild(configBox);
+
+        let title = document.createElement("div");
+        title.innerText = "视频控制配置";
+        title.className = "title";
+        configBox.appendChild(title);
+
+        for (let i = 0; i < this.#configContent.length; i++) {
+            const element = this.#configContent[i];
+            BasicHandler.generateBoxItem(element, configBox);
+        }
+
+        return configBox;
+    }
+
+    /**
+     * 移除配置列表窗口
+     */
+    static removeConfigBox() {
+        const configBox = this.#getConfigBox();
+        if (configBox) {
+            configBox.remove();
+        }
+    }
+
+    /**
+     * 创建播放列表窗口
+     * @returns {HTMLElement}
+     */
+    static createPlaylistBox() {
+        const existBox = this.#getPlaylistBox();
+        if (existBox) {
+            return existBox;
+        }
+
+        let playlistBox = document.createElement("div");
+        playlistBox.id = this.#playlistBoxId;
+        playlistBox.className = "playlistBox";
+        document.body.appendChild(playlistBox);
+
+        let oneClear = document.createElement("button");
+        oneClear.innerText = "一键清空";
+        oneClear.className = "oneClear";
+        oneClear.onclick = function () {
+            if (confirm("确定要清空播放列表么？")) {
+                General.courses([]);
+            }
+        };
+        playlistBox.appendChild(oneClear);
+
+        let title = document.createElement("div");
+        title.innerText = "视频列表";
+        title.className = "title";
+        playlistBox.appendChild(title);
+
+        const courses = General.courses();
+        for (let i = 0; i < courses.length; i++) {
+            const course = courses[i];
+            let childTitle = document.createElement("p");
+            childTitle.innerText = course.title;
+            childTitle.title = course.title;
+            childTitle.className = "child_title";
+            playlistBox.appendChild(childTitle);
+
+            let childBtn = document.createElement("button");
+            childBtn.innerText = "移除";
+            childBtn.type = "button";
+            childBtn.setAttribute("data", i);
+            childBtn.className = "child_remove";
+            childBtn.onclick = function () {
+                if (confirm("确定要删除这个视频任务么？")) {
+                    General.removeCourse(this.getAttribute("data"));
+                }
+            };
+            playlistBox.appendChild(childBtn);
+        }
+    }
+
+    /**
+     * 移除播放列表窗口
+     */
+    static removePlaylistBox() {
+        const playlistBox = this.#getPlaylistBox();
+        if (playlistBox) {
+            playlistBox.remove();
+        }
+    }
+
+    /**
+     * 创建反馈窗口
+     * @returns {HTMLElement}
+     */
+    static createFeedbackBox() {
+        const existBox = this.#getFeedbackBox();
+        if (existBox) {
+            return existBox;
+        }
+
+        let box = document.createElement("div");
+        box.className = "feedbackBox";
+        document.body.appendChild(box);
+
+        // let title = document.createElement("p");
+        // title.className = "title";
+        // title.innerText = "问题反馈";
+        // box.appendChild(title);
+
+        let changelog = document.createElement("div");
+        changelog.className = "changelog";
+        changelog.innerHTML = "1.本次重构了所有代码。<br/>" +
+            "2.修复了鼠标移出视频会暂停的问题。<br/>" +
+            "3.增加了'一键添加'到播放列表与'一键清空'的功能。<br/>" +
+            "4.修复一些已知错误。<br/>";
+        box.appendChild(changelog);
+
+        let notice = document.createElement("div");
+        notice.innerHTML = "点击课程详情页中的插件提供的【添加到播放列表】按钮添加需要自动播放的课程。<br/>受到浏览器策略影响第一次可能无法自动播放，请手动点击播放或在控制配置中设置为静音，再刷新。";
+        notice.className = "notice";
+        box.appendChild(notice);
+
+        const links = [
+            {title: "使用教程", link: "https://www.cnblogs.com/ykbb/p/16695563.html"},
+            {title: "博客园", link: "https://www.cnblogs.com/ykbb/"},
+            {title: "留言", link: "https://msg.cnblogs.com/send/ykbb"},
+            {title: "GitHub", link: "https://github.com/yikuaibaiban/chinahrt-autoplay/issues"},
+        ];
+
+        for (const link of links) {
+            let a = document.createElement("a");
+            a.innerText = link.title;
+            a.target = "_blank";
+            a.href = link.link;
+            a.className = "link";
+            box.appendChild(a);
+        }
+
+        return box;
+    }
+
+    /**
+     * 移除反馈窗口
+     */
+    static removeFeedbackBox() {
+        this.#getFeedbackBox()?.remove();
+    }
+
+    /**
+     * 创建公告窗口
+     * @returns {HTMLElement}
+     */
+    // static createNoticeBox() {
+    //     const existBox = this.#getNoticeBox();
+    //     if (existBox) {
+    //         return existBox;
+    //     }
+    //
+    //     let box = document.createElement("div");
+    //     box.innerHTML = "点击课程详情页中的插件提供的【添加到播放列表】按钮添加需要自动播放的课程。<br/>受到浏览器策略影响第一次可能无法自动播放，请手动点击播放或在控制配置中设置为静音，再刷新。";
+    //     box.className = "notice";
+    //     document.body.appendChild(box);
+    // }
+
+    /**
+     * 删除公告窗口
+     */
+    // static removeNoticeBox() {
+    //     this.#getNoticeBox()?.remove();
+    // }
+}
+
+class DetailPage {
+    /**
+     * 可播放列表Id
+     * @type {string}
+     */
+    static #canPlaylistId = "canPlaylist"
+
+    /**
+     * 创建可播放列表
+     * @returns {HTMLDivElement}
+     */
+    static createCanPlaylist() {
+        const existBox = document.getElementById(this.#canPlaylistId);
+        if (existBox) {
+            return existBox;
+        }
+        let playlist = document.createElement("div");
+        playlist.id = this.#canPlaylistId;
+        playlist.className = "canPlaylist";
+
+        let oneClick = document.createElement("button");
+        oneClick.innerText = "一键添加";
+        oneClick.type = "button";
+        oneClick.className = "oneClick";
+        oneClick.onclick = function () {
+            const items = playlist.getElementsByClassName("item");
+            for (let item of items) {
+                const buttons = item.getElementsByTagName("button");
+                for (let button of buttons) {
+                    if (button.disabled) {
+                        continue;
+                    }
+                    button.click();
+                }
+            }
+        }
+        playlist.appendChild(oneClick);
+
+        // 注册清空播放列表事件
+        playlist.addEventListener("clear", function () {
+            while (playlist.firstChild) {
+                playlist.removeChild(playlist.firstChild);
+            }
+        });
+
+        // 注册添加列表事件
+        playlist.addEventListener("append", function (data) {
+            let child = document.createElement("div");
+            child.className = "item";
+            this.appendChild(child);
+
+            let title = document.createElement("p");
+            title.innerText = data.detail.title;
+            title.title = data.detail.title;
+            title.className = "title";
+            child.appendChild(title);
+
+            let status = document.createElement("p");
+            status.innerText = data.detail.status;
+            status.title = data.detail.status;
+            status.className = "status";
+            child.appendChild(status);
+
+            let added = General.courseAdded(undefined, data.detail.url);
+            let addBtn = document.createElement("button");
+            addBtn.innerText = added ? "已在列表中" : "添加到播放列表";
+            addBtn.type = "button";
+            addBtn.disabled = added;
+            addBtn.className = added ? "addBtn disable" : "addBtn";
+            addBtn.onclick = function () {
+                if (General.addCourse(data.detail)) {
+                    this.setAttribute("disabled", true);
+                    this.setAttribute("class", "addBtn disable");
+                    this.innerText = "已在列表中";
+                }
+            };
+            child.appendChild(addBtn);
+        });
+
+        document.body.append(playlist);
+        return playlist;
+    }
+
+    /**
+     * 清理可播放列表
+     */
+    static removeCanPlaylist() {
+        document.getElementById(this.#canPlaylistId)?.remove();
+    }
+
+    /**
+     * 添加
+     * @param box
+     * @param courses
+     */
+    static appendToCanPlaylist(courses) {
+        const box = document.getElementById(this.#canPlaylistId);
+        if (Array.isArray(courses) && box) {
+            for (let i = 0; i < courses.length; i++) {
+                let course = courses[i];
+                box.dispatchEvent(new CustomEvent("append", {detail: course}));
+            }
+        }
+    }
+}
+
+class experimentalHandler {
+    static #experimentalBoxId = "experimentalBox";
+
+    static #experimentalContent = [
+        {
+            title: "播放模式",
+            name: "playMode",
+            action: General.playModel,
+            remark: "",
+            options: [
+                {
+                    text: "正常",
+                    value: 0
+                },
+                {
+                    text: "二段播放",
+                    value: 3,
+                    title: "将视频分为二段：开始，结束各播放90秒"
+                },
+                {
+                    text: "三段播放",
+                    value: 1,
+                    title: "将视频分为三段：开始，中间，结束各播放90秒"
+                },
+                {
+                    text: "秒播",
+                    value: 2,
+                    title: "将视频分为两段:开始，结束各播放一秒"
+                }
+            ]
+        }
+    ];
+
+    /**
+     * 获取实验功能窗口实例
+     * @returns {HTMLElement}
+     */
+    static #getExperimentalBox() {
+        return document.getElementById(this.#experimentalBoxId);
+    }
+
+    /**
+     * 创建实验性功能窗口
+     * @returns {HTMLElement}
+     */
+    static createExperimentalBox() {
+        const existBox = this.#getExperimentalBox();
+        if (existBox) {
+            return existBox;
+        }
+
+        let box = document.createElement("div");
+        box.className = "experimentalBox";
+        document.body.appendChild(box);
+
+        let tip = document.createElement("div");
+        tip.innerText = "此功能只适用个别地区。无法使用的就不要使用了。";
+        tip.className = "tip";
+        box.appendChild(tip);
+
+        for (let i = 0; i < this.#experimentalContent.length; i++) {
+            BasicHandler.generateBoxItem(this.#experimentalContent[i], box);
+        }
+    }
+
+    /**
+     * 删除实验性功能窗口
+     */
+    static removeExperimentalBox() {
+        const box = this.#getExperimentalBox();
+        if (box) {
+            box.remove();
+        }
+    }
+
+    static timeHandler(t) {
+        if (player !== undefined) {
+            let videoDuration = parseInt(player.getMetaDate().duration);
+
+            // 三段播放模式
+            if (General.playModel() === 1) {
+                // 时长不足
+                if (videoDuration <= 270) {
+                    return;
+                }
+
+                // 中段范围
+                var videoMiddleStart = (videoDuration / 2) - 45;
+                var videoMiddleEnd = (videoDuration / 2) + 45;
+
+                // 后段开始
+                var videoEndStart = videoDuration - 90;
+
+                // 跳转到中段
+                if (t > 90 && t < videoMiddleStart) {
+                    player.videoSeek(videoMiddleStart);
+                    return;
+                }
+
+                // 跳转到后段
+                if (t > videoMiddleEnd && t < videoEndStart) {
+                    player.videoSeek(videoEndStart);
+                    return;
+                }
+                return;
+            }
+
+            // 秒播模式
+            if (General.playModel() === 2) {
+                // 跳转到后段
+                if (t > 1 && t < videoDuration - 1) {
+                    player.videoSeek(videoDuration - 1);
+                }
+                return;
+            }
+
+            if (General.playModel() === 3) {
+                if (videoDuration <= 180) {
+                    return;
+                }
+
+                // 跳转到后段
+                if (t > 90 && t < videoDuration - 90) {
+                    player.videoSeek(videoDuration - 90);
+                }
+            }
+        } else {
+            General.notification("找不到播放器");
+        }
+    }
+}
+
+window.onload = function () {
+    setTimeout(function () {
+        let inVue;
+        try {
+            inVue = Vue !== undefined;
+            console.log("当前模式：Vue", window.location.href);
+        } catch (e) {
+            inVue = false;
+            console.log("当前模式：JQuery", window.location.href);
+        }
+
+        const pageCategory = inVue ? VueHandler.pageCategory() : BasicHandler.pageCategory();
+
+        if (pageCategory === General.pageCategory.play || General.pageCategory.detail === pageCategory) {
+            // 添加Css样式
+            GM_addStyle(GM_getResourceText("customCss"))
+            // GM_addStyle(".canPlaylist{width:300px;height:500px;position:fixed;top:100px;background:#fff;right:20px;border:1px solid #c1c1c1}.canPlaylist .item{padding:8px;line-height:150%;border-bottom:1px solid #c1c1c1;margin-bottom:3px}.canPlaylist .item .title{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c1c1c1}.canPlaylist .item .addBtn{color:#fff;background-color:#4bccf2;border:0;padding:5px 10px;margin-top:4px}.canPlaylist .item .addBtn.disable{color:#000;background-color:#c3c3c3}.configBox{right:0;top:0;height:280px}.configBox .title{border-bottom:1px solid #ccc;padding:5px;font-weight:700}.configBox .item{border-bottom:1px dotted #ccc;padding-bottom:5px}.configBox .item .remark{font-size:13px;font-weight:700}.configBox,.experimentalBox,.playlistBox{position:fixed;width:250px;background-color:#fff;z-index:9999;border:1px solid #ccc}.playlistBox{right:0;top:290px;height:450px;overflow-y:auto}.playlistBox .title{border-bottom:1px solid #ccc;padding:5px;font-weight:700}.playlistBox .child_title{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.playlistBox .child_remove{color:#fff;background-color:#fd1952;border:0;padding:5px 10px;margin:4px 0 10px}.experimentalBox{right:255px;top:0;height:280px}.experimentalBox .tip{border-bottom:1px solid #ccc;padding:5px;font-weight:700;color:red}.feedbackBox,.notice{font-size:14px;font-weight:700;color:red;background:#fff;position:absolute;line-height:30px;z-index:99999;left:30px}.feedbackBox{padding:4px 7px;top:0;display:flex;flex-direction:column;text-align:center}.feedbackBox .title{font-size:16px;border-bottom:1px solid red}.feedbackBox .link{font-size:18px;padding:8px 0 8px 10px;color:#4bccf2}.notice{bottom:10px}");
+
+            if (pageCategory === General.pageCategory.play) {
+                let playTimer = setInterval(function () {
+                    try {
+                        console.log(player)
+                        if (player) {
+                            PlayPage.init();
+                            clearInterval(playTimer);
+                        }
+                    } catch (error) {
+                        console.log(error)
+                        console.log("未获取到播放器");
+                    }
+                }, 500);
+            } else if (pageCategory === General.pageCategory.detail) {
+                // 创建课播放列表窗口
+                DetailPage.createCanPlaylist();
+                if (inVue) {
+                    let checkTimer = setInterval(function () {
+                        if (VueHandler.getInstance()) {
+                            // 注册路由变更监听器
+                            VueHandler.registerRouterChange();
+                            DetailPage.appendToCanPlaylist(VueHandler.getCourses());
+                            clearInterval(checkTimer);
+                        }
+                    }, 500);
+                } else {
+                    DetailPage.appendToCanPlaylist(BasicHandler.findPageCourses());
+                }
+            }
+        }
+    }, 1000);
 }
