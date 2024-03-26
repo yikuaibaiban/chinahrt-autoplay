@@ -1,0 +1,46 @@
+.playlistBox {
+    position: fixed;
+    right: 0;
+    top: 290px;
+    width: 250px;
+    height: 450px;
+    background-color: #FFF;
+    z-index: 9999;
+    border: 1px solid #ccc;
+    overflow-y: auto;
+}
+
+.playlistBox .oneClear {
+    margin: 0 auto;
+    width: 100%;
+    border: none;
+    padding: 6px 0;
+    background: linear-gradient(180deg, #4BCE31, #4bccf2);
+    height: 50px;
+    border-radius: 5px;
+    color: #FFF;
+    font-weight: bold;
+    letter-spacing: 4px;
+    font-size: 18px;
+}
+
+.playlistBox .title {
+    border-bottom: 1px solid #ccc;
+    padding: 5px;
+    font-weight: bold;
+}
+
+.playlistBox .child_title {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.playlistBox .child_remove {
+    color: #FFF;
+    background-color: #fd1952;
+    border: none;
+    padding: 5px 10px;
+    margin: 4px 0 10px 0;
+}

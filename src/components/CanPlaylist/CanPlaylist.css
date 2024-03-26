@@ -1,0 +1,60 @@
+.canPlaylist {
+    width: 300px;
+    height: 500px;
+    position: fixed;
+    top: 100px;
+    background: rgba(255, 255, 255, 1);
+    right: 80px;
+    border: 1px solid #c1c1c1;
+    overflow-y: auto;
+}
+
+.canPlaylist .oneClick {
+    margin: 0 auto;
+    width: 100%;
+    border: none;
+    padding: 6px 0;
+    background: linear-gradient(180deg, #4BCE31, #4bccf2);
+    height: 50px;
+    border-radius: 5px;
+    color: #FFF;
+    font-weight: bold;
+    letter-spacing: 4px;
+    font-size: 18px;
+}
+
+.canPlaylist .item {
+    border-bottom: 1px solid #c1c1c1;
+    padding: 8px;
+    line-height: 150%;
+    border-bottom: 1px solid #c1c1c1;
+    margin-bottom: 3px;
+}
+
+.canPlaylist .item .title {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.canPlaylist .item .status {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #c1c1c1;
+}
+
+.canPlaylist .item .addBtn {
+    color: #FFF;
+    background-color: #4bccf2;
+    border: none;
+    padding: 5px 10px;
+    margin-top: 4px;
+}
+
+.canPlaylist .item .addBtn.disable {
+    color: #000;
+    background-color: #c3c3c3;
+}

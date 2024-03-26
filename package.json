@@ -1,0 +1,13 @@
+{
+    "name": "chinahrt-autoplay",
+    "version": "1.0.0",
+    "author": "yikuaibaiban",
+    "description": "chinahrt-autoplay",
+    "scripts": {
+        "start": "node build.js"
+    },
+    "dependencies": {
+        "uglify-js": "3.17.4"
+    },
+    "license":"Apache-2.0"
+}

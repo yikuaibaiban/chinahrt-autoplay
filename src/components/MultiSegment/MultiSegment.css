@@ -1,0 +1,29 @@
+.multiSegmentBox {
+    position: fixed;
+    right: 255px;
+    top: 0;
+    width: 250px;
+    height: 280px;
+    background-color: #FFF;
+    z-index: 9999;
+    border: 1px solid #ccc;
+}
+
+.multiSegmentBox .tip {
+    border-bottom: 1px solid #ccc;
+    padding: 5px;
+    font-weight: bold;
+    color: red;
+}
+
+.multiSegmentBox .item {
+    font-size: 14px;
+}
+
+.multiSegmentBox label {
+    margin-right: 3px;
+}
+
+.multiSegmentBox label input {
+    margin-left: 2px;
+}

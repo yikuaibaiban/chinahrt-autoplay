@@ -1,0 +1,32 @@
+.feedbackBox {
+    font-size: 14px;
+    font-weight: bold;
+    background-color: #FFF;
+    padding: 4px 7px;
+    position: absolute;
+    top: 0;
+    line-height: 30px;
+    z-index: 99999;
+    display: flex;
+    flex-direction: row;
+    left: 30px;
+    flex-wrap: wrap;
+    width: 226px;
+}
+
+.feedbackBox .link {
+    /*font-size: 18px;*/
+    padding: 8px 0 8px 10px;
+    /*color: #4bccf2;*/
+}
+
+.feedbackBox .notice {
+    font-size: 14px;
+    color: red;
+    border-bottom: 2px dotted #c1c1c1;
+}
+
+.feedbackBox .changelog {
+    margin: 10px 0;
+    border-bottom: 2px dotted #c1c1c1;
+}

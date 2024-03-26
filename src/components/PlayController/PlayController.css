@@ -1,0 +1,17 @@
+.controllerBox {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 250px;
+    height: 280px;
+    background-color: #FFF;
+    z-index: 9999;
+    border: 1px solid #ccc;
+    overflow-y: auto;
+}
+
+.controllerBox .title {
+    border-bottom: 1px solid #ccc;
+    padding: 5px;
+    font-weight: bold;
+}
