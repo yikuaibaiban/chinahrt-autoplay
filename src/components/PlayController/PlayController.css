@@ -8,10 +8,15 @@
     z-index: 9999;
     border: 1px solid #ccc;
     overflow-y: auto;
+    font-size: 12px;
 }
 
-.controllerBox .title {
-    border-bottom: 1px solid #ccc;
-    padding: 5px;
+.controllerBox .linksBox {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    height: 30px;
+    line-height: 30px;
     font-weight: bold;
+    border-bottom: 1px dotted;
 }

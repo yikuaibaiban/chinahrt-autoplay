@@ -4,10 +4,25 @@ function createControllerBox() {
     controllerBox.className = "controllerBox"
     document.body.appendChild(controllerBox);
 
-    let title = document.createElement("div");
-    title.innerText = "视频控制配置";
-    title.className = "title";
-    controllerBox.appendChild(title);
+    let linksBox = document.createElement("div");
+    linksBox.className = "linksBox";
+    controllerBox.appendChild(linksBox);
+
+    const links = [
+        {title: "使用教程", link: "https://www.cnblogs.com/ykbb/p/16695563.html"},
+        {title: "留言", link: "https://msg.cnblogs.com/send/ykbb"},
+        {title: "博客园", link: "https://www.cnblogs.com/ykbb/"},
+        {title: "Gitee", link: "https://gitee.com/yikuaibaiban/chinahrt-autoplay/issues"},
+        {title: "GitHub", link: "https://github.com/yikuaibaiban/chinahrt-autoplay/issues"},
+    ];
+
+    for (const link of links) {
+        let a = document.createElement("a");
+        a.innerText = link.title;
+        a.target = "_blank";
+        a.href = link.link;
+        linksBox.appendChild(a);
+    }
 
     controllerBox.appendChild(createAutoPlayOption());
     controllerBox.appendChild(createDragOption());
@@ -18,62 +33,86 @@ function createControllerBox() {
 }
 
 function playerInit() {
-    // 总是显示播放进度
     player.changeControlBarShow(true);
-
-    // 拖动开关
-    player.changeConfig('config', 'timeScheduleAdjust', General.drag());
-
-    // 静音
-    if (General.mute()) {
+    player.changeConfig('config', 'timeScheduleAdjust', drag());
+    if (mute()) {
         player.videoMute();
     } else {
         player.videoEscMute();
     }
-
-    // 播放速度
-    player.changePlaybackRate(General.speed());
-
-    // 自动播放
-    if (General.autoPlay()) {
+    player.changePlaybackRate(speed());
+    if (autoPlay()) {
         player.videoPlay();
     }
 }
 
-function playInit(){
-     // 移除鼠标焦点事件
-        // 此方法为官方自带方法。
-        removePauseBlur();
+function playInit() {
+    removePauseBlur();
+    createPlaylistBox();
+    createControllerBox();
+    createMultiSegmentBox();
 
-        // 初始化播放窗口
-        createConfigBox();
+    GM_addValueChangeListener("courses", function (name, oldValue, newValue, remote) {
+        removePlaylistBox();
         createPlaylistBox();
-        createFeedbackBox();
+    });
 
-        experimentalHandler.createExperimentalBox();
-
-        // 检测播放列表变更
-        GM_addValueChangeListener(General.coursesKey, function (name, oldValue, newValue, remote) {
-            removePlaylistBox();
-            createPlaylistBox();
+    let checkPlayerTimer = setInterval(function () {
+        if (!player) return;
+        clearInterval(checkPlayerTimer);
+        player.removeListener('ended', endedHandler);
+        GM_addValueChangeListener("autoPlay", function (name, oldValue, newValue, remote) {
+            if (newValue) {
+                player.videoPlay();
+            }
+        });
+        GM_addValueChangeListener("mute", function (name, oldValue, newValue, remote) {
+            if (newValue) {
+                player.videoMute();
+            } else {
+                player.videoEscMute();
+            }
+        });
+        GM_addValueChangeListener("drag", function (name, oldValue, newValue, remote) {
+            player.changeConfig('config', 'timeScheduleAdjust', newValue);
+        });
+        GM_addValueChangeListener("speed", function (name, oldValue, newValue, remote) {
+            player.changePlaybackRate(newValue);
         });
 
         playerInit();
-        player.addListener('loadedmetadata', playerInit);
 
-        // 播放结束
-        player.addListener('ended', function () {
-            General.removeCourse(window.location.href);
-            let courses = General.courses();
-            if (courses.length === 0) {
-                General.notification("所有视频已经播放完毕");
-            } else {
-                General.notification("即将播放下一个视频:" + courses[0].title);
-                window.top.location.href = courses[0].url;
-            }
+        player.addListener('ended', function (event) {
+            courseyunRecord();
+            player.videoClear();
+            $.ajax({
+                url: "/videoPlay/takeRecord",
+                data: {
+                    studyCode: attrset.studyCode,
+                    recordUrl: attrset.recordUrl,
+                    updateRedisMap: attrset.updateRedisMap,
+                    recordId: attrset.recordId,
+                    sectionId: attrset.sectionId,
+                    signId: attrset.signId,
+                    isEnd: true,
+                    businessId: attrset.businessId
+                },
+                dataType: "json",
+                type: "post",
+                success: function (data) {
+                    console.log("提交学习记录", data);
+                    removeCourse(attrset.sectionId);
+                    let courses = coursesList();
+                    if (courses.length === 0) {
+                        notification("所有视频已经播放完毕");
+                    } else {
+                        notification("即将播放下一个视频:" + courses[0].sectionName);
+                        window.top.location.href = courses[0].url;
+                    }
+                }
+            });
         });
 
-        player.addListener('time', function (t) {
-            experimentalHandler.timeHandler(t);
-        });
+        player.addListener('time', timeHandler);
+    }, 500);
 }

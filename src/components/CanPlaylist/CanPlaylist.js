@@ -12,7 +12,7 @@ function createCanPlaylist() {
         for (let item of items) {
             const buttons = item.getElementsByTagName("button");
             for (let button of buttons) {
-                if (button.disabled) {
+                if (button.innerText === "从播放列表移除") {
                     continue;
                 }
                 button.click();
@@ -20,48 +20,56 @@ function createCanPlaylist() {
         }
     }
     playlist.appendChild(oneClick);
-
-    // 注册清空播放列表事件
     playlist.addEventListener("clear", function () {
-        while (playlist.firstChild) {
-            playlist.removeChild(playlist.firstChild);
+        let elementsByClassName = playlist.getElementsByClassName(".item");
+        for (let i = elementsByClassName.length - 1; i >= 0; i--) {
+            elementsByClassName[i].remove();
         }
     });
 
-    // 注册添加列表事件
+    playlist.addEventListener("refresh", function () {
+        let elements = playlist.getElementsByClassName("item");
+        for (let i = elements.length - 1; i >= 0; i--) {
+            const element = elements[i];
+            const buttonElement = element.getElementsByTagName("button")[0];
+            let added = courseAdded(buttonElement.getAttribute("data-sectionId"));
+            buttonElement.innerText = added ? "从播放列表移除" : "添加到播放列表";
+            buttonElement.className = added ? "addBtn remove" : "addBtn";
+        }
+    });
     playlist.addEventListener("append", function (data) {
         let child = document.createElement("div");
         child.className = "item";
         this.appendChild(child);
 
         let title = document.createElement("p");
-        title.innerText = data.detail.title;
-        title.title = data.detail.title;
+        title.innerText = data.detail.sectionName;
+        title.title = title.innerText;
         title.className = "title";
         child.appendChild(title);
 
         let status = document.createElement("p");
-        status.innerText = data.detail.status;
-        status.title = data.detail.status;
+        status.innerText = data.detail.study_status;
+        status.title = status.innerText;
         status.className = "status";
         child.appendChild(status);
 
-        let added = courseAdded(undefined, data.detail.url);
+        let added = courseAdded(data.detail.sectionId);
         let addBtn = document.createElement("button");
-        addBtn.innerText = added ? "已在列表中" : "添加到播放列表";
         addBtn.type = "button";
-        addBtn.disabled = added;
-        addBtn.className = added ? "addBtn disable" : "addBtn";
+        addBtn.innerText = added ? "从播放列表移除" : "添加到播放列表";
+        addBtn.className = added ? "addBtn remove" : "addBtn";
+        addBtn.setAttribute("data-sectionId", data.detail.sectionId);
         addBtn.onclick = function () {
-            if (addCourse(data.detail)) {
-                this.setAttribute("disabled", true);
-                this.setAttribute("class", "addBtn disable");
-                this.innerText = "已在列表中";
+            if (this.innerText === "从播放列表移除") {
+                removeCourse(data.detail.sectionId);
+            } else {
+                addCourse(data.detail);
             }
         };
         child.appendChild(addBtn);
     });
 
-    document.body.append(playlist);
+    document.body.appendChild(playlist);
     return playlist;
 }

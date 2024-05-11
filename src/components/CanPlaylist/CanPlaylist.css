@@ -43,7 +43,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #c1c1c1;
+    color: #c90000;
 }
 
 .canPlaylist .item .addBtn {
@@ -54,7 +54,6 @@
     margin-top: 4px;
 }
 
-.canPlaylist .item .addBtn.disable {
-    color: #000;
-    background-color: #c3c3c3;
+.canPlaylist .item .addBtn.remove {
+    background-color: #fd1952;
 }

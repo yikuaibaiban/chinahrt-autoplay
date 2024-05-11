@@ -11,7 +11,6 @@
 }
 
 .playlistBox .oneClear {
-    margin: 0 auto;
     width: 100%;
     border: none;
     padding: 6px 0;
@@ -22,25 +21,29 @@
     font-weight: bold;
     letter-spacing: 4px;
     font-size: 18px;
+    cursor: pointer;
+    margin-bottom: 5px;
 }
 
-.playlistBox .title {
-    border-bottom: 1px solid #ccc;
-    padding: 5px;
-    font-weight: bold;
+.playlistBox .playlistItem {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
 }
 
-.playlistBox .child_title {
+.playlistBox .playlistItem .child_title {
     font-size: 13px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    width: 180px;
 }
 
-.playlistBox .child_remove {
+.playlistBox .playlistItem .child_remove {
     color: #FFF;
     background-color: #fd1952;
     border: none;
     padding: 5px 10px;
-    margin: 4px 0 10px 0;
+    cursor: pointer;
 }

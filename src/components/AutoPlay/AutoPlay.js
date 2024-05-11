@@ -3,13 +3,13 @@ function createAutoPlayOption() {
     box.classList.add('autoPlayBox');
 
     let title = document.createElement('p');
-    title.classList.add('.title');
+    title.classList.add('title');
     title.innerText = '自动播放';
     box.appendChild(title);
 
     let options = [
-        { text: "是", value: true },
-        { text: "否", value: false }
+        {text: "是", value: true},
+        {text: "否", value: false}
     ]
 
     options.forEach(option => {

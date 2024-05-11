@@ -14,30 +14,35 @@ function createPlaylistBox() {
     };
     playlistBox.appendChild(oneClear);
 
-    let title = document.createElement("div");
-    title.innerText = "视频列表";
-    title.className = "title";
-    playlistBox.appendChild(title);
-
     const courses = coursesList();
     for (let i = 0; i < courses.length; i++) {
         const course = courses[i];
+        let playlistItem = document.createElement("div");
+        playlistItem.className = "playlistItem";
+        playlistBox.appendChild(playlistItem);
+
         let childTitle = document.createElement("p");
-        childTitle.innerText = course.title;
-        childTitle.title = course.title;
+        childTitle.innerText = course.sectionName;
+        childTitle.title = childTitle.innerText;
         childTitle.className = "child_title";
-        playlistBox.appendChild(childTitle);
+        playlistItem.appendChild(childTitle);
 
         let childBtn = document.createElement("button");
         childBtn.innerText = "移除";
         childBtn.type = "button";
-        childBtn.setAttribute("data", i);
         childBtn.className = "child_remove";
         childBtn.onclick = function () {
             if (confirm("确定要删除这个视频任务么？")) {
-                removeCourse(this.getAttribute("data"));
+                removeCourse(course.sectionId);
             }
         };
-        playlistBox.appendChild(childBtn);
+        playlistItem.appendChild(childBtn);
+    }
+}
+
+function removePlaylistBox() {
+    let playlistBox = document.getElementById("playlistBox");
+    if (playlistBox) {
+        playlistBox.remove();
     }
 }

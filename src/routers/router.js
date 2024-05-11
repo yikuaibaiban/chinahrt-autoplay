@@ -1,45 +1,54 @@
-let isVue = false;
+let tempCourses = [];
 
-function initRouter(href) {
-    try {
-        isVue = getVueInstance() !== undefined;
-        console.log("当前模式：Vue", window.location.href);
-    } catch (e) {
-        isVue = false;
-        console.log("当前模式：JQuery", window.location.href);
+function interceptsXHRCallback(url, response, method, readyState) {
+    if (readyState !== 4) return;
+
+    // url: /gp6/lms/stu/course/courseDetail
+    if (url.includes("courseDetail")) {
+        let canPlaylist = document.getElementById("canPlaylist");
+        if (canPlaylist === null) {
+            canPlaylist = createCanPlaylist();
+        }
+
+        canPlaylist.dispatchEvent(new CustomEvent("clear", {}));
+        tempCourses = [];
+
+        const data = JSON.parse(response);
+        data.data.course.chapter_list.forEach((chapter) => {
+            chapter.section_list.forEach((section) => {
+                const courseDetail = new CourseDetail();
+                courseDetail.courseId = data.data.courseId;
+                courseDetail.sectionId = section.id;
+                courseDetail.sectionName = section.name;
+                courseDetail.trainplanId = data.data.trainplanId;
+                courseDetail.study_status = section.study_status;
+
+                tempCourses.push(courseDetail);
+                canPlaylist.dispatchEvent(new CustomEvent("append", {
+                    detail: courseDetail
+                }));
+            })
+        });
     }
+}
 
-    if (!isVue) {
-        if (href.indexOf("/course/play_video") > -1 || href.indexOf("/videoPlay/play") > -1) {
-            let playTimer = setInterval(function () {
-                try {
-                    if (player) {
-                        playInit();
-                        clearInterval(playTimer);
-                    }
-                } catch (error) {
-                    console.log("未获取到播放器", error);
-                }
-            }, 500);
-        }
-        if (href.indexOf("/course/preview") > -1) {
-            createCanPlaylist();
-            appendToCanPlaylist(getJQueryCourses());
-        }
-    }
+function interceptFetchCallback(url, response, options) {
+    response.json().then(data => {
+    });
+}
 
-    if (isVue) {
-        const path = getVueInstance()?.$route?.path;
-        if (path === "/v_courseDetails") {
-            createCanPlaylist();
-            let checkTimer = setInterval(function () {
-                if (getVueInstance()) {
-                    // 注册路由变更监听器
-                    VueHandler.registerRouterChange();
-                    appendToCanPlaylist(getVueCourses());
-                    clearInterval(checkTimer);
-                }
-            }, 500);
-        }
+function initRouter() {
+    interceptsXHR(interceptsXHRCallback);
+    interceptFetch(interceptFetchCallback);
+
+    if (currentPageType() === 1) {
+        GM_addValueChangeListener("courses", function (name, oldValue, newValue, remote) {
+            const element = document.getElementById("canPlaylist");
+            if (element) {
+                element.dispatchEvent(new CustomEvent("refresh", {}));
+            }
+        });
+    } else if (currentPageType() === 2) {
+        playInit();
     }
 }
