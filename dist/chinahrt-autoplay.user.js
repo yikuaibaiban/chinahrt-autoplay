@@ -1,6 +1,7 @@
 // ==UserScript==
 // @name         chinahrt继续教育；chinahrt全自动刷课；解除系统限制；
 // @version      2024.05.11.01
+// @license      Apache-2.0
 // @namespace    https://github.com/yikuaibaiban/chinahrt
 // @description  【❤全自动刷课❤】功能可自由配置，只需将视频添加到播放列表，后续刷课由系统自动完成；使用教程：https://www.cnblogs.com/ykbb/p/16695563.html
 // @author       yikuaibaiban
