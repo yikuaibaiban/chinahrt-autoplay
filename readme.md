@@ -57,7 +57,7 @@
 
 - 如何使用
 
-    可以访问 https://www.cnblogs.com/ykbb/p/16695563.html 查看使用方法
+    可以访问 https://yikuaibaiban.github.io/chinahrt-autoplay-docs/ 查看使用方法
 
 - 不会自动播放？
 

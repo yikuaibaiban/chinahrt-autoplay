@@ -9,7 +9,7 @@ function createControllerBox() {
     controllerBox.appendChild(linksBox);
 
     const links = [
-        {title: "使用教程", link: "https://www.cnblogs.com/ykbb/p/16695563.html"},
+        {title: "使用教程", link: "https://yikuaibaiban.github.io/chinahrt-autoplay-docs/"},
         {title: "留言", link: "https://msg.cnblogs.com/send/ykbb"},
         {title: "博客园", link: "https://www.cnblogs.com/ykbb/"},
         {title: "Gitee", link: "https://gitee.com/yikuaibaiban/chinahrt-autoplay/issues"},
