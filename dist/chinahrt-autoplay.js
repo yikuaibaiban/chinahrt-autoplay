@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         chinahrt继续教育；chinahrt全自动刷课；解除系统限制；
-// @version      2024.05.27.01
+// @version      2024.06.21.01
 // @license      Apache-2.0
 // @namespace    https://github.com/yikuaibaiban/chinahrt
 // @description  【❤全自动刷课❤】功能可自由配置，只需将视频添加到播放列表，后续刷课由系统自动完成；使用教程：https://yikuaibaiban.github.io/chinahrt-autoplay-docs/
@@ -411,123 +411,156 @@ function createMuteOption() {
     return box;
 }
 function createControllerBox() {
-    let controllerBox = document.createElement("div");
-    controllerBox.id = "controllerBox";
-    controllerBox.className = "controllerBox"
-    document.body.appendChild(controllerBox);
+	let controllerBox = document.createElement('div');
+	controllerBox.id = 'controllerBox';
+	controllerBox.className = 'controllerBox';
+	document.body.appendChild(controllerBox);
 
-    let linksBox = document.createElement("div");
-    linksBox.className = "linksBox";
-    controllerBox.appendChild(linksBox);
+	let linksBox = document.createElement('div');
+	linksBox.className = 'linksBox';
+	controllerBox.appendChild(linksBox);
 
-    const links = [
-        {title: "使用教程", link: "https://yikuaibaiban.github.io/chinahrt-autoplay-docs/"},
-        {title: "留言", link: "https://msg.cnblogs.com/send/ykbb"},
-        {title: "博客园", link: "https://www.cnblogs.com/ykbb/"},
-        {title: "Gitee", link: "https://gitee.com/yikuaibaiban/chinahrt-autoplay/issues"},
-        {title: "GitHub", link: "https://github.com/yikuaibaiban/chinahrt-autoplay/issues"},
-    ];
+	const links = [
+		{
+			title: '使用教程',
+			link: 'https://yikuaibaiban.github.io/chinahrt-autoplay-docs/',
+		},
+		{ title: '留言', link: 'https://msg.cnblogs.com/send/ykbb' },
+		{ title: '博客园', link: 'https://www.cnblogs.com/ykbb/' },
+		{
+			title: 'Gitee',
+			link: 'https://gitee.com/yikuaibaiban/chinahrt-autoplay/issues',
+		},
+		{
+			title: 'GitHub',
+			link: 'https://github.com/yikuaibaiban/chinahrt-autoplay/issues',
+		},
+	];
 
-    for (const link of links) {
-        let a = document.createElement("a");
-        a.innerText = link.title;
-        a.target = "_blank";
-        a.href = link.link;
-        linksBox.appendChild(a);
-    }
+	for (const link of links) {
+		let a = document.createElement('a');
+		a.innerText = link.title;
+		a.target = '_blank';
+		a.href = link.link;
+		linksBox.appendChild(a);
+	}
 
-    controllerBox.appendChild(createAutoPlayOption());
-    controllerBox.appendChild(createDragOption());
-    controllerBox.appendChild(createMuteOption());
-    controllerBox.appendChild(createSpeedOption());
+	controllerBox.appendChild(createAutoPlayOption());
+	controllerBox.appendChild(createDragOption());
+	controllerBox.appendChild(createMuteOption());
+	controllerBox.appendChild(createSpeedOption());
 
-    return controllerBox
+	return controllerBox;
 }
 
 function playerInit() {
-    player.changeControlBarShow(true);
-    player.changeConfig('config', 'timeScheduleAdjust', drag());
-    if (mute()) {
-        player.videoMute();
-    } else {
-        player.videoEscMute();
-    }
-    player.changePlaybackRate(speed());
-    if (autoPlay()) {
-        player.videoPlay();
-    }
+	if (player.V.ended || (!player.V.ended && !player.V.paused)) {
+		return;
+	}
+
+	player.changeControlBarShow(true);
+	player.changeConfig('config', 'timeScheduleAdjust', drag());
+	if (mute()) {
+		player.videoMute();
+	} else {
+		player.videoEscMute();
+	}
+	player.changePlaybackRate(speed());
+	if (autoPlay()) {
+		player.videoPlay();
+	}
+
+	player.removeListener('ended', endedHandler);
+	player.addListener('ended', function (event) {
+		courseyunRecord();
+		player.videoClear();
+		$.ajax({
+			url: '/videoPlay/takeRecord',
+			data: {
+				studyCode: attrset.studyCode,
+				recordUrl: attrset.recordUrl,
+				updateRedisMap: attrset.updateRedisMap,
+				recordId: attrset.recordId,
+				sectionId: attrset.sectionId,
+				signId: attrset.signId,
+				isEnd: true,
+				businessId: attrset.businessId,
+			},
+			dataType: 'json',
+			type: 'post',
+			success: function (data) {
+				console.log('提交学习记录', data);
+				removeCourse(attrset.sectionId);
+				let courses = coursesList();
+				if (courses.length === 0) {
+					notification('所有视频已经播放完毕');
+				} else {
+					notification('即将播放下一个视频:' + courses[0].sectionName);
+					window.top.location.href = courses[0].url;
+				}
+			},
+		});
+	});
+
+	player.addListener('time', timeHandler);
 }
 
 function playInit() {
-    removePauseBlur();
-    createPlaylistBox();
-    createControllerBox();
-    createMultiSegmentBox();
+	removePauseBlur();
+	createPlaylistBox();
+	createControllerBox();
+	createMultiSegmentBox();
 
-    GM_addValueChangeListener("courses", function (name, oldValue, newValue, remote) {
-        removePlaylistBox();
-        createPlaylistBox();
-    });
+	GM_addValueChangeListener(
+		'courses',
+		function (name, oldValue, newValue, remote) {
+			removePlaylistBox();
+			createPlaylistBox();
+		}
+	);
 
-    let checkPlayerTimer = setInterval(function () {
-        if (!player) return;
-        clearInterval(checkPlayerTimer);
-        player.removeListener('ended', endedHandler);
-        GM_addValueChangeListener("autoPlay", function (name, oldValue, newValue, remote) {
-            if (newValue) {
-                player.videoPlay();
-            }
-        });
-        GM_addValueChangeListener("mute", function (name, oldValue, newValue, remote) {
-            if (newValue) {
-                player.videoMute();
-            } else {
-                player.videoEscMute();
-            }
-        });
-        GM_addValueChangeListener("drag", function (name, oldValue, newValue, remote) {
-            player.changeConfig('config', 'timeScheduleAdjust', newValue);
-        });
-        GM_addValueChangeListener("speed", function (name, oldValue, newValue, remote) {
-            player.changePlaybackRate(newValue);
-        });
+	let checkPlayerTimer = setInterval(function () {
+		if (!player) return;
+		clearInterval(checkPlayerTimer);
+		setTimeout(function () {
+			GM_addValueChangeListener(
+				'autoPlay',
+				function (name, oldValue, newValue, remote) {
+					if (newValue) {
+						player.videoPlay();
+					}
+				}
+			);
+			GM_addValueChangeListener(
+				'mute',
+				function (name, oldValue, newValue, remote) {
+					if (newValue) {
+						player.videoMute();
+					} else {
+						player.videoEscMute();
+					}
+				}
+			);
+			GM_addValueChangeListener(
+				'drag',
+				function (name, oldValue, newValue, remote) {
+					player.changeConfig('config', 'timeScheduleAdjust', newValue);
+				}
+			);
+			GM_addValueChangeListener(
+				'speed',
+				function (name, oldValue, newValue, remote) {
+					player.changePlaybackRate(newValue);
+				}
+			);
 
-        playerInit();
+			playerInit();
 
-        player.addListener('ended', function (event) {
-            courseyunRecord();
-            player.videoClear();
-            $.ajax({
-                url: "/videoPlay/takeRecord",
-                data: {
-                    studyCode: attrset.studyCode,
-                    recordUrl: attrset.recordUrl,
-                    updateRedisMap: attrset.updateRedisMap,
-                    recordId: attrset.recordId,
-                    sectionId: attrset.sectionId,
-                    signId: attrset.signId,
-                    isEnd: true,
-                    businessId: attrset.businessId
-                },
-                dataType: "json",
-                type: "post",
-                success: function (data) {
-                    console.log("提交学习记录", data);
-                    removeCourse(attrset.sectionId);
-                    let courses = coursesList();
-                    if (courses.length === 0) {
-                        notification("所有视频已经播放完毕");
-                    } else {
-                        notification("即将播放下一个视频:" + courses[0].sectionName);
-                        window.top.location.href = courses[0].url;
-                    }
-                }
-            });
-        });
-
-        player.addListener('time', timeHandler);
-    }, 500);
+			setInterval(playerInit, 1000);
+		}, 1000);
+	}, 500);
 }
+
 function createPlaylistBox() {
     let playlistBox = document.createElement("div");
     playlistBox.id = "playlistBox";
